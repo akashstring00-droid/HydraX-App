@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Hydrax",
+    "slug": "hydrax",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0d1b2a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hydrax.app",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Hydrax uses Bluetooth Low Energy to connect to your wearable dehydration monitoring device.",
+        "NSBluetoothPeripheralUsageDescription": "Hydrax uses Bluetooth to transfer real-time vitals and hydration sensor data."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0d1b2a"
+      },
+      "package": "com.hydrax.app",
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
