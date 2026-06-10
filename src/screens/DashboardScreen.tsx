@@ -30,6 +30,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { GlassCard } from '../components/GlassCard';
 import { CircularRing } from '../components/CircularRing';
 import { Waveform } from '../components/Waveform';
+import { NotificationCenter } from '../components/NotificationCenter';
 
 import Svg, { Path, Circle, Rect, Line, G, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 
@@ -52,6 +53,11 @@ export const DashboardScreen: React.FC = () => {
 
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencySMSState, setEmergencySMSState] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showFluidModal, setShowFluidModal] = useState(false);
+  const [showSleepModal, setShowSleepModal] = useState(false);
+  const [showInsightsModal, setShowInsightsModal] = useState(false);
 
   const isDesktop = width >= 768;
   const quickLogAmounts = [250, 350, 500];
@@ -148,7 +154,7 @@ export const DashboardScreen: React.FC = () => {
             <TouchableOpacity 
               style={styles.bellBtn} 
               activeOpacity={0.7}
-              onPress={() => setActiveTab('insights')}
+              onPress={() => setShowNotifications(true)}
             >
               <Bell size={16} color={darkMode ? '#FFFFFF' : '#0F172A'} />
               <View style={styles.bellBadge} />
@@ -642,7 +648,7 @@ export const DashboardScreen: React.FC = () => {
             <TouchableOpacity 
               style={styles.breakdownBtn} 
               activeOpacity={0.7}
-              onPress={() => setActiveTab('history')}
+              onPress={() => setShowFluidModal(true)}
             >
               <Text style={styles.breakdownBtnText}>View Full Breakdown</Text>
             </TouchableOpacity>
@@ -711,7 +717,7 @@ export const DashboardScreen: React.FC = () => {
             <TouchableOpacity 
               style={styles.breakdownBtn} 
               activeOpacity={0.7}
-              onPress={() => setActiveTab('insights')}
+              onPress={() => setShowSleepModal(true)}
             >
               <Text style={styles.breakdownBtnText}>View Sleep Calibration</Text>
             </TouchableOpacity>
@@ -729,7 +735,7 @@ export const DashboardScreen: React.FC = () => {
               <TouchableOpacity 
                 style={styles.recItem} 
                 activeOpacity={0.7}
-                onPress={() => setActiveTab('history')}
+                onPress={() => setShowFluidModal(true)}
               >
                 <View style={styles.recLeftRow}>
                   <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(0, 229, 195, 0.08)' }]}>
@@ -746,7 +752,7 @@ export const DashboardScreen: React.FC = () => {
               <TouchableOpacity 
                 style={styles.recItem} 
                 activeOpacity={0.7}
-                onPress={() => setActiveTab('insights')}
+                onPress={() => setShowInsightsModal(true)}
               >
                 <View style={styles.recLeftRow}>
                   <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(20, 184, 255, 0.08)' }]}>
@@ -763,7 +769,7 @@ export const DashboardScreen: React.FC = () => {
               <TouchableOpacity 
                 style={styles.recItem} 
                 activeOpacity={0.7}
-                onPress={() => setActiveTab('insights')}
+                onPress={() => setShowSleepModal(true)}
               >
                 <View style={styles.recLeftRow}>
                   <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(124, 58, 237, 0.08)' }]}>
@@ -780,7 +786,7 @@ export const DashboardScreen: React.FC = () => {
             <TouchableOpacity 
               style={styles.breakdownBtn} 
               activeOpacity={0.7}
-              onPress={() => setActiveTab('insights')}
+              onPress={() => setShowInsightsModal(true)}
             >
               <Text style={styles.breakdownBtnText}>View All Insights</Text>
             </TouchableOpacity>
@@ -879,6 +885,192 @@ export const DashboardScreen: React.FC = () => {
           </GlassCard>
         </View>
       )}
+
+      {/* Fluid Balance Details Modal Overlay */}
+      {showFluidModal && (
+        <View style={StyleSheet.absoluteFill} className="bg-black/90 z-50 items-center justify-center p-6">
+          <GlassCard style={styles.modalCard} className="w-full max-w-lg border-[#00E5C3]/30 bg-[#050B18]/95 p-5">
+            {/* Modal Header */}
+            <View style={styles.modalHeaderRow}>
+              <View style={styles.modalHeaderTitleRow}>
+                <Droplet size={18} color="#00E5C3" fill="#00E5C3" />
+                <Text style={[styles.modalTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Fluid Balance Details</Text>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setShowFluidModal(false)} 
+                style={styles.modalCloseBtn}
+              >
+                <X size={14} color={darkMode ? '#FFFFFF' : '#0F172A'} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
+              <View style={[styles.modalWarnBox, { backgroundColor: darkMode ? 'rgba(0, 229, 195, 0.1)' : 'rgba(0, 229, 195, 0.05)', borderColor: 'rgba(0, 229, 195, 0.2)' }]}>
+                <Text style={[styles.warnBoxTitle, { color: '#00E5C3' }]}>Hydration Status Report</Text>
+                <Text style={[styles.warnBoxText, { color: darkMode ? 'rgba(255, 255, 255, 0.8)' : '#0F172A' }]}>
+                  {netBalance >= 0 
+                    ? "Fluid intake is balanced. Your biological status is optimal." 
+                    : "Negative fluid balance detected. Sweat and bowel losses exceed total fluid intake. Increase hydration immediately."}
+                </Text>
+              </View>
+
+              <Text style={[styles.modalSectionLabel, { color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B' }]}>Fluid Telemetry</Text>
+              <View style={styles.telemetryGrid}>
+                {[
+                  { label: 'Total Intake', val: `${totalIntake} ml`, color: '#14B8FF' },
+                  { label: 'Sweat Loss', val: `${sweatLoss} ml`, color: '#FF4D6D' },
+                  { label: 'Bowel Loss', val: `${bowelLoss} ml`, color: '#FFAD33' },
+                  { label: 'Net Balance', val: `${netBalance} ml`, color: netBalance >= 0 ? '#00E5C3' : '#FF4D6D' }
+                ].map((item, idx) => (
+                  <View key={idx} style={[styles.telemetryChip, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.04)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)' }]}>
+                    <Text style={[styles.telemetryLabel, { color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B' }]}>{item.label}</Text>
+                    <Text style={[styles.telemetryVal, { color: item.color }]}>{item.val}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={[styles.modalSectionLabel, { color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B' }]}>Hydration Analytics</Text>
+              <View style={styles.contactsList}>
+                <View style={[styles.contactRow, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Dehydration Risk Level</Text>
+                  <Text style={[styles.contactPhone, { color: prediction.riskLevel === 'High' ? '#FF4D6D' : '#00FFB2', fontWeight: '800' }]}>
+                    {prediction.riskLevel} Risk
+                  </Text>
+                </View>
+                <View style={[styles.contactRow, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Dehydration Probability</Text>
+                  <Text style={[styles.contactPhone, { color: '#FFAD33', fontWeight: '800' }]}>
+                    {prediction.dehydrationPercent}%
+                  </Text>
+                </View>
+                <View style={[styles.contactRow, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Simulated Loss Rate</Text>
+                  <Text style={[styles.contactPhone, { color: darkMode ? '#8E9AA6' : '#64748B' }]}>
+                    ~180 ml/hr
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+          </GlassCard>
+        </View>
+      )}
+
+      {/* Sleep Analysis Details Modal Overlay */}
+      {showSleepModal && (
+        <View style={StyleSheet.absoluteFill} className="bg-black/90 z-50 items-center justify-center p-6">
+          <GlassCard style={styles.modalCard} className="w-full max-w-lg border-[#7C3AED]/30 bg-[#050B18]/95 p-5">
+            {/* Modal Header */}
+            <View style={styles.modalHeaderRow}>
+              <View style={styles.modalHeaderTitleRow}>
+                <Moon size={18} color="#7C3AED" />
+                <Text style={[styles.modalTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Sleep Analysis Details</Text>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setShowSleepModal(false)} 
+                style={styles.modalCloseBtn}
+              >
+                <X size={14} color={darkMode ? '#FFFFFF' : '#0F172A'} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
+              <View style={[styles.modalWarnBox, { backgroundColor: darkMode ? 'rgba(124, 58, 237, 0.1)' : 'rgba(124, 58, 237, 0.05)', borderColor: 'rgba(124, 58, 237, 0.2)' }]}>
+                <Text style={[styles.warnBoxTitle, { color: '#7C3AED' }]}>Sleep Quality Score: 88%</Text>
+                <Text style={[styles.warnBoxText, { color: darkMode ? 'rgba(255, 255, 255, 0.8)' : '#0F172A' }]}>
+                  Excellent Sleep Quality! Your REM and Deep Sleep ratios are within the optimal physiological recovery ranges (42% combined).
+                </Text>
+              </View>
+
+              <Text style={[styles.modalSectionLabel, { color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B' }]}>Sleep Stages Telemetry</Text>
+              <View style={styles.telemetryGrid}>
+                {[
+                  { label: 'Total Sleep', val: '7h 42m', color: '#7C3AED' },
+                  { label: 'Deep Sleep', val: '1h 42m (22%)', color: '#7C3AED' },
+                  { label: 'REM Sleep', val: '1h 36m (20%)', color: '#00E5C3' },
+                  { label: 'Light Sleep', val: '4h 24m (58%)', color: '#14B8FF' }
+                ].map((item, idx) => (
+                  <View key={idx} style={[styles.telemetryChip, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.04)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)' }]}>
+                    <Text style={[styles.telemetryLabel, { color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B' }]}>{item.label}</Text>
+                    <Text style={[styles.telemetryVal, { color: item.color }]}>{item.val}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={[styles.modalSectionLabel, { color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B' }]}>Sleep Physiology Metrics</Text>
+              <View style={styles.contactsList}>
+                <View style={[styles.contactRow, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Wake Events</Text>
+                  <Text style={[styles.contactPhone, { color: '#FF4D6D', fontWeight: '800' }]}>2 events</Text>
+                </View>
+                <View style={[styles.contactRow, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Sleep Efficiency</Text>
+                  <Text style={[styles.contactPhone, { color: '#00FFB2', fontWeight: '800' }]}>94%</Text>
+                </View>
+                <View style={[styles.contactRow, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Respiratory Rate</Text>
+                  <Text style={[styles.contactPhone, { color: darkMode ? '#8E9AA6' : '#64748B' }]}>14.2 rpm</Text>
+                </View>
+              </View>
+            </ScrollView>
+          </GlassCard>
+        </View>
+      )}
+
+      {/* AI Physiological Insights Details Modal Overlay */}
+      {showInsightsModal && (
+        <View style={StyleSheet.absoluteFill} className="bg-black/90 z-50 items-center justify-center p-6">
+          <GlassCard style={styles.modalCard} className="w-full max-w-lg border-[#FFAD33]/30 bg-[#050B18]/95 p-5">
+            {/* Modal Header */}
+            <View style={styles.modalHeaderRow}>
+              <View style={styles.modalHeaderTitleRow}>
+                <Lightbulb size={18} color="#FFAD33" />
+                <Text style={[styles.modalTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>AI Physiological Insights</Text>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setShowInsightsModal(false)} 
+                style={styles.modalCloseBtn}
+              >
+                <X size={14} color={darkMode ? '#FFFFFF' : '#0F172A'} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
+              <View style={[styles.modalWarnBox, { backgroundColor: darkMode ? 'rgba(255, 173, 51, 0.1)' : 'rgba(255, 173, 51, 0.05)', borderColor: 'rgba(255, 173, 51, 0.2)' }]}>
+                <Text style={[styles.warnBoxTitle, { color: '#FFAD33' }]}>Real-Time Advisory Active</Text>
+                <Text style={[styles.warnBoxText, { color: darkMode ? 'rgba(255, 255, 255, 0.8)' : '#0F172A' }]}>
+                  Bio-telemetry analytics parsed via Hydrax ML models. Telemetry correlates daily HRV and resting heart rate against gut recovery indexes.
+                </Text>
+              </View>
+
+              <Text style={[styles.modalSectionLabel, { color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B' }]}>Active Recommendations</Text>
+              <View style={styles.contactsList}>
+                <View style={[styles.contactRow, { borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Hydration Intake Balance</Text>
+                  <Text style={[styles.contactPhone, { color: '#00FFB2', fontWeight: '800' }]}>Optimal</Text>
+                </View>
+                <View style={[styles.contactRow, { flexDirection: 'column', alignItems: 'flex-start', borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A', marginBottom: 4 }]}>Vitals & Autonomic Response</Text>
+                  <Text style={{ color: darkMode ? 'rgba(255, 255, 255, 0.6)' : '#64748B', fontSize: 9, lineHeight: 12 }}>
+                    HRV stands at {currentVitals.hrv}ms, which is {recoveryScore > 70 ? 'elevated' : 'stable'} indicating high recovery readiness. Resting heart rate is stable at {currentVitals.heartRate} BPM.
+                  </Text>
+                </View>
+                <View style={[styles.contactRow, { flexDirection: 'column', alignItems: 'flex-start', borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#E2E8F0', backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)' }]}>
+                  <Text style={[styles.contactName, { color: darkMode ? '#FFFFFF' : '#0F172A', marginBottom: 4 }]}>Hydration Predictive Model</Text>
+                  <Text style={{ color: darkMode ? 'rgba(255, 255, 255, 0.6)' : '#64748B', fontSize: 9, lineHeight: 12 }}>
+                    Based on your water logging trend, the model predicts low dehydration risk over the next 8 hours if normal fluid ingestion continues.
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+          </GlassCard>
+        </View>
+      )}
+
+      {/* Slide Notification Center Overlay Drawer */}
+      <NotificationCenter 
+        visible={showNotifications} 
+        onClose={() => setShowNotifications(false)} 
+      />
     </SafeAreaView>
   );
 };
