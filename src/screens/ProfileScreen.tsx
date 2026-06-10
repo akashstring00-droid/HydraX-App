@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Image, Alert, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Image, Alert, useWindowDimensions, Platform, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -7,6 +7,7 @@ import { useVitalsStore } from '../store/useVitalsStore';
 import { useWaterStore } from '../store/useWaterStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
 import { GlassCard } from '../components/GlassCard';
+import { useTranslation } from '../store/i18n';
 import { 
   User, 
   Settings, 
@@ -22,15 +23,20 @@ import {
   Droplet,
   Brain,
   Activity,
-  FileText
+  FileText,
+  Camera,
+  RefreshCw,
+  Globe,
+  Lock
 } from 'lucide-react-native';
 
 export const ProfileScreen: React.FC = () => {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 768;
+  const { t } = useTranslation();
 
   const { user, updateProfile, logout } = useAuthStore();
-  const { units, emergencyContacts, setUnits, addEmergencyContact, removeEmergencyContact } = useSettingsStore();
+  const { units, language, emergencyContacts, setUnits, setLanguage, addEmergencyContact, removeEmergencyContact } = useSettingsStore();
   const { currentVitals } = useVitalsStore();
   const { currentIntake, dailyWaterTarget } = useWaterStore();
   const { recoveryScore } = useDiarrheaStore();
@@ -38,370 +44,571 @@ export const ProfileScreen: React.FC = () => {
   const darkMode = useSettingsStore((state) => state.darkMode);
   const styles = getStyles(darkMode);
 
-  // Profile fields state
+  // Form states
+  const [name, setName] = useState<string>(user?.displayName || '');
   const [age, setAge] = useState<string>(user?.age ? String(user.age) : '28');
   const [weight, setWeight] = useState<string>(user?.weight ? String(user.weight) : '74');
+  const [height, setHeight] = useState<string>(user?.height ? String(user.height) : '178');
   const [gender, setGender] = useState<string>(user?.gender || 'Male');
-  const [activityLevel, setActivityLevel] = useState<'low' | 'medium' | 'high'>(user?.activityLevel || 'high');
+  const [dob, setDob] = useState<string>(user?.dob || '1998-05-15');
+  const [bloodGroup, setBloodGroup] = useState<string>(user?.bloodGroup || 'O+');
+  const [medicalNotes, setMedicalNotes] = useState<string>(user?.medicalNotes || '');
+  const [emergencyName, setEmergencyName] = useState<string>(user?.emergencyContactName || '');
+  const [emergencyPhone, setEmergencyPhone] = useState<string>(user?.emergencyContactPhone || '');
   const [isEditing, setIsEditing] = useState<boolean>(false);
 
-  // New emergency contact fields
-  const [contactName, setContactName] = useState<string>('');
-  const [contactPhone, setContactPhone] = useState<string>('');
+  // Geolocation states
+  const [geoState, setGeoState] = useState<{
+    loading: boolean;
+    error: string | null;
+    city: string;
+    state: string;
+    country: string;
+    latitude: number | null;
+    longitude: number | null;
+  }>({
+    loading: false,
+    error: null,
+    city: '',
+    state: '',
+    country: '',
+    latitude: null,
+    longitude: null,
+  });
+
+  const fileInputRef = useRef<any>(null);
+
+  // Geocoding helper using OSM Nominatim (Free, no keys needed)
+  const fetchLocationName = async (lat: number, lon: number) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1`,
+        {
+          headers: {
+            'Accept-Language': 'en',
+            'User-Agent': 'Hydrax-App-Web',
+          },
+        }
+      );
+      const data = await response.json();
+      if (data && data.address) {
+        const city = data.address.city || data.address.town || data.address.village || data.address.suburb || '';
+        const state = data.address.state || '';
+        const country = data.address.country || '';
+        return { city, state, country };
+      }
+    } catch (error) {
+      console.error('Nominatim Geocoding Error', error);
+    }
+    return null;
+  };
+
+  const detectLocation = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setGeoState((prev) => ({ ...prev, error: 'Geolocation not supported' }));
+      return;
+    }
+
+    setGeoState((prev) => ({ ...prev, loading: true, error: null }));
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        const address = await fetchLocationName(latitude, longitude);
+        if (address) {
+          setGeoState({
+            loading: false,
+            error: null,
+            city: address.city,
+            state: address.state,
+            country: address.country,
+            latitude,
+            longitude,
+          });
+        } else {
+          setGeoState({
+            loading: false,
+            error: null,
+            city: 'Coordinates Detected',
+            state: `${latitude.toFixed(3)}°N`,
+            country: `${longitude.toFixed(3)}°E`,
+            latitude,
+            longitude,
+          });
+        }
+      },
+      (error) => {
+        setGeoState({
+          loading: false,
+          error: t('locationDisabled'),
+          city: '',
+          state: '',
+          country: '',
+          latitude: null,
+          longitude: null,
+        });
+      },
+      { enableHighAccuracy: true, timeout: 6000 }
+    );
+  };
+
+  // Run geolocation check once on load
+  useEffect(() => {
+    detectLocation();
+  }, []);
 
   const handleUpdateProfile = async () => {
     const ageNum = parseInt(age, 10);
     const weightNum = parseFloat(weight);
+    const heightNum = parseFloat(height);
 
-    if (isNaN(ageNum) || isNaN(weightNum)) {
-      Alert.alert('Invalid Input', 'Please enter valid values for age and weight.');
+    if (isNaN(ageNum) || isNaN(weightNum) || isNaN(heightNum)) {
+      Alert.alert('Invalid Input', 'Please enter valid values for age, weight, and height.');
       return;
     }
 
     await updateProfile({
+      displayName: name,
       age: ageNum,
       weight: weightNum,
+      height: heightNum,
       gender,
-      activityLevel
+      dob,
+      bloodGroup,
+      medicalNotes,
+      emergencyContactName: emergencyName,
+      emergencyContactPhone: emergencyPhone
     });
 
     setIsEditing(false);
-    Alert.alert('Profile Saved', 'Your body metrics have been updated.');
+    Alert.alert('Profile Saved', 'Your bio-intelligence dossier has been updated.');
   };
 
-  const handleAddContact = () => {
-    if (!contactName.trim() || !contactPhone.trim()) {
-      Alert.alert('Required Fields', 'Please fill in both contact name and phone number.');
-      return;
+  // Profile Photo Upload handling
+  const triggerPhotoUpload = () => {
+    if (Platform.OS === 'web' && fileInputRef.current) {
+      fileInputRef.current.click();
+    } else {
+      Alert.alert('Select Photo', 'Upload photo supported in web browser.');
     }
-    addEmergencyContact(contactName, contactPhone);
-    setContactName('');
-    setContactPhone('');
-    Alert.alert('Contact Added', 'Primary emergency contact has been logged.');
   };
 
-  // Biometric Target Progress calculations
-  const hydrationPct = Math.round(Math.min(100, (currentIntake / dailyWaterTarget) * 100));
-  const hrvPct = Math.round(Math.min(100, (currentVitals.hrv / 120) * 100));
-  const gutPct = recoveryScore;
-  const sleepPct = 88; // Static baseline target
+  const handlePhotoChange = (event: any) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        Alert.alert('File Too Large', 'Please select an image smaller than 2 MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = async (e: any) => {
+        const base64 = e.target.result;
+        await updateProfile({ avatar: base64 });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    await updateProfile({ avatar: '' });
+  };
+
+  // Profile Completion calculator
+  const getProfileCompletion = () => {
+    let fields = [
+      user?.avatar,
+      user?.displayName,
+      user?.dob,
+      user?.gender,
+      user?.height,
+      user?.weight,
+      user?.bloodGroup,
+      user?.emergencyContactName,
+      user?.emergencyContactPhone,
+      user?.medicalNotes
+    ];
+    let filled = fields.filter(f => f !== undefined && f !== null && f !== '').length;
+    return Math.round((filled / fields.length) * 100);
+  };
+
+  const completionPct = getProfileCompletion();
+
+  // Wipe Local Storage
+  const handleWipeLocalStorage = () => {
+    Alert.alert(
+      'Reset All Data?',
+      'This will erase all logs, history, and custom settings stored in this browser session. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Reset Data', 
+          style: 'destructive',
+          onPress: () => {
+            if (typeof window !== 'undefined') {
+              window.localStorage.clear();
+              window.location.reload();
+            }
+          } 
+        }
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Hidden file input for web avatar uploads */}
+      {Platform.OS === 'web' && (
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          style={{ display: 'none' }} 
+          accept="image/*" 
+          onChange={handlePhotoChange} 
+        />
+      )}
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* Dossier Header Section */}
-        <View style={styles.dossierHeader}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.dossierName}>{user?.displayName?.toUpperCase() || 'AKASH SHARMA'}</Text>
-            <Text style={styles.dossierTitle}>BIO-INTELLIGENCE SPECIALIST</Text>
-          </View>
-          
-          <View style={styles.headerRight}>
-            <View style={styles.contactItem}>
-              <MapPin size={10} color={darkMode ? '#8E9AA6' : '#64748B'} />
-              <Text style={styles.contactText}>New York, USA, 10001</Text>
-            </View>
-            <View style={styles.contactItem}>
-              <Mail size={10} color={darkMode ? '#8E9AA6' : '#64748B'} />
-              <Text style={styles.contactText}>{user?.email || 'akash@hydrax.io'}</Text>
-            </View>
-            <View style={styles.contactItem}>
-              <Phone size={10} color={darkMode ? '#8E9AA6' : '#64748B'} />
-              <Text style={styles.contactText}>+1 (555) 382-9901</Text>
-            </View>
-          </View>
+        {/* Header Title */}
+        <View style={{ marginBottom: 24 }}>
+          <Text style={styles.bannerSubtitle}>{t('profileSetup')}</Text>
+          <Text style={styles.bannerTitle}>Biometric Dossier</Text>
         </View>
 
-        <View style={styles.divider} />
-
-        {/* Responsive Two-Column Layout */}
-        <View style={isDesktop ? styles.desktopColumns : styles.mobileColumns}>
+        {/* Two-Column responsive Grid */}
+        <View style={styles.layoutGrid}>
           
-          {/* LEFT SIDEBAR COLUMN */}
-          <View style={isDesktop ? styles.leftColumnDesktop : styles.columnFullMobile}>
+          {/* COLUMN 1: Profile Display & Health Targets */}
+          <View style={[styles.gridColumn, { flex: isDesktop ? 5 : undefined }]}>
             
-            {/* Avatar card */}
-            <View style={styles.avatarCard}>
-              <Image 
-                source={{ uri: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&auto=format&fit=crop' }}
-                style={styles.avatarImage as any}
-              />
-              <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
-                <LogOut size={12} color="#FF4D6D" />
-                <Text style={styles.logoutText}>TERMINATE SESSION</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* About Me Section */}
-            <View style={styles.sidebarSection}>
-              <Text style={styles.sidebarSectionTitle}>ABOUT ME</Text>
-              <Text style={styles.sidebarSectionText}>
-                Active health-tech operator calibrated for real-time biosensor analysis. Specialized in tracking metabolic hydration coefficients, cardiovascular heart-rate variability indicators, and gastrointestinal recovery indexes.
-              </Text>
-            </View>
-
-            {/* System Units Setup */}
-            <View style={styles.sidebarSection}>
-              <Text style={styles.sidebarSectionTitle}>SYSTEM PREFERENCES</Text>
-              <View style={styles.unitsToggleWrapper}>
-                {(['metric', 'imperial'] as const).map((unit) => (
-                  <TouchableOpacity
-                    key={unit}
-                    onPress={() => setUnits(unit)}
-                    style={[
-                      styles.unitBtn,
-                      units === unit && styles.unitBtnActive
-                    ]}
-                  >
-                    <Text style={[
-                      styles.unitBtnText,
-                      units === unit && styles.unitBtnTextActive
-                    ]}>
-                      {unit.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Emergency Contacts Setup */}
-            <View style={styles.sidebarSection}>
-              <Text style={styles.sidebarSectionTitle}>CLINICAL REFERENCE</Text>
-              
-              <View style={styles.contactInputForm}>
-                <TextInput
-                  value={contactName}
-                  onChangeText={setContactName}
-                  placeholder="Doctor Name (e.g. Dr. Patel)"
-                  placeholderTextColor={darkMode ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.35)'}
-                  style={styles.formInput}
-                />
-                <TextInput
-                  value={contactPhone}
-                  onChangeText={setContactPhone}
-                  placeholder="Direct Phone (e.g. +15550199)"
-                  placeholderTextColor={darkMode ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.35)'}
-                  keyboardType="phone-pad"
-                  style={styles.formInput}
-                />
-                <TouchableOpacity
-                  onPress={handleAddContact}
-                  style={styles.addContactBtn}
-                >
-                  <Plus size={12} color="#050B18" strokeWidth={3} />
-                  <Text style={styles.addContactBtnText}>ADD CONTACT</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.contactsList}>
-                {emergencyContacts.map((contact) => (
-                  <View key={contact.id} style={styles.contactCard}>
-                    <View style={styles.contactInfo}>
-                      <Text style={styles.contactCardName}>{contact.name}</Text>
-                      <Text style={styles.contactCardPhone}>{contact.phone}</Text>
+            {/* Profile Card with Completion percentage & Geolocation */}
+            <GlassCard style={styles.profileSummaryCard} borderColor={darkMode ? 'rgba(0, 229, 195, 0.1)' : 'rgba(0, 229, 195, 0.15)'}>
+              <View style={styles.avatarContainer}>
+                <View style={styles.avatarWrapper}>
+                  {user?.avatar ? (
+                    <Image source={{ uri: user.avatar }} style={styles.avatarImg} />
+                  ) : (
+                    <View style={[styles.avatarPlaceholder, { backgroundColor: darkMode ? '#111A36' : '#E2E8F0' }]}>
+                      <User size={50} color={darkMode ? '#8E9AA6' : '#64748B'} />
                     </View>
-                    <TouchableOpacity 
-                      onPress={() => removeEmergencyContact(contact.id)}
-                      style={styles.deleteContactBtn}
-                    >
-                      <Trash2 size={10} color="#FF4D6D" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
+                  )}
+                  
+                  {/* Photo Edit Trigger overlay */}
+                  <TouchableOpacity style={styles.cameraIconBtn} onPress={triggerPhotoUpload}>
+                    <Camera size={14} color="#050B18" strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Photo removal trigger */}
+                {user?.avatar ? (
+                  <TouchableOpacity style={styles.removePhotoBtn} onPress={handleRemovePhoto}>
+                    <Text style={styles.removePhotoBtnText}>{t('removePhoto')}</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                <Text style={[styles.profileName, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>
+                  {user?.displayName || 'Akash Sharma'}
+                </Text>
+                <Text style={styles.profileEmail}>
+                  <Mail size={12} color="#8E9AA6" style={{ marginRight: 4 }} />
+                  {user?.email || 'akash@hydrax.io'}
+                </Text>
+
+                {/* Geolocation Live Badge */}
+                <View style={[styles.locationBadge, { backgroundColor: darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }]}>
+                  <MapPin size={12} color="#00E5C3" style={{ marginRight: 4 }} />
+                  {geoState.loading ? (
+                    <Text style={styles.locationText}>Locating...</Text>
+                  ) : geoState.error ? (
+                    <Text style={[styles.locationText, { color: '#FF4D6D' }]}>{geoState.error}</Text>
+                  ) : (
+                    <Text style={[styles.locationText, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>
+                      {`${geoState.city}${geoState.city ? ', ' : ''}${geoState.state}${geoState.state ? ', ' : ''}${geoState.country}`}
+                    </Text>
+                  )}
+                  <TouchableOpacity onPress={detectLocation} style={{ marginLeft: 6 }}>
+                    <RefreshCw size={10} color={darkMode ? '#8E9AA6' : '#64748B'} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+
+              <View style={styles.divider} />
+
+              {/* Profile Completion Score Progress Bar */}
+              <View style={styles.completionContainer}>
+                <View style={styles.completionHeader}>
+                  <Text style={[styles.completionLabel, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>{t('profileCompletion')}</Text>
+                  <Text style={styles.completionVal}>{completionPct}%</Text>
+                </View>
+                <View style={[styles.progressBarBg, { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)' }]}>
+                  <View style={[styles.progressBarFill, { width: `${completionPct}%` }]} />
+                </View>
+              </View>
+            </GlassCard>
+
+            {/* Physiological Statistics Card */}
+            <GlassCard style={styles.statsCard}>
+              <Text style={[styles.sectionTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Physiological baselines</Text>
+              
+              <View style={styles.statsRow}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Hydration Pct</Text>
+                  <Text style={[styles.statValue, { color: '#00E5C3' }]}>
+                    {Math.round(Math.min(100, (currentIntake / dailyWaterTarget) * 100))}%
+                  </Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Heart Rate</Text>
+                  <Text style={[styles.statValue, { color: '#FF4D6D' }]}>{currentVitals.heartRate} <Text style={styles.statUnit}>bpm</Text></Text>
+                </View>
+              </View>
+
+              <View style={styles.statsRow}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Gut Health</Text>
+                  <Text style={[styles.statValue, { color: '#7C3AED' }]}>{recoveryScore}%</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>Skin Temperature</Text>
+                  <Text style={[styles.statValue, { color: '#14B8FF' }]}>{currentVitals.skinTemp}°C</Text>
+                </View>
+              </View>
+            </GlassCard>
 
           </View>
-
-          {/* RIGHT CONTENT COLUMN */}
-          <View style={isDesktop ? styles.rightColumnDesktop : styles.columnFullMobile}>
+          
+          {/* COLUMN 2: Editable Biography & System Preferences */}
+          <View style={[styles.gridColumn, { flex: isDesktop ? 7 : undefined }]}>
             
-            {/* Timeline: Physiological Baseline */}
-            <View style={styles.contentSection}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>PHYSIOLOGICAL BASELINE</Text>
+            {/* Bio-Intelligence editable form */}
+            <GlassCard style={styles.detailsCard}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={[styles.sectionTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>{t('editProfile')}</Text>
                 <TouchableOpacity 
-                  onPress={() => isEditing ? handleUpdateProfile() : setIsEditing(true)}
-                  style={styles.editBtn}
+                  style={[styles.editBtn, { backgroundColor: isEditing ? '#00E5C3' : 'rgba(255,255,255,0.03)' }]} 
+                  onPress={isEditing ? handleUpdateProfile : () => setIsEditing(true)}
                 >
                   {isEditing ? (
-                    <Check size={14} color="#00E5C3" />
+                    <>
+                      <Check size={14} color="#050B18" style={{ marginRight: 4 }} />
+                      <Text style={[styles.editBtnText, { color: '#050B18' }]}>{t('saveProfile')}</Text>
+                    </>
                   ) : (
-                    <Edit3 size={14} color={darkMode ? '#FFFFFF' : '#0F172A'} />
+                    <>
+                      <Edit3 size={14} color={darkMode ? '#FFFFFF' : '#0F172A'} style={{ marginRight: 4 }} />
+                      <Text style={[styles.editBtnText, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Edit Form</Text>
+                    </>
                   )}
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.timelineContainer}>
+              {/* Grid fields */}
+              <View style={styles.formGrid}>
                 
-                {/* Timeline Node 1: Age */}
-                <View style={styles.timelineItem}>
-                  <View style={styles.timelineIndicator}>
-                    <View style={styles.timelineDot} />
-                    <View style={styles.timelineLine} />
-                  </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineLabel}>AGE CALIBRATION</Text>
-                    {isEditing ? (
-                      <TextInput
-                        value={age}
-                        onChangeText={setAge}
-                        keyboardType="numeric"
-                        style={styles.timelineInput}
-                      />
-                    ) : (
-                      <Text style={styles.timelineValue}>{age} Years</Text>
-                    )}
-                  </View>
+                {/* Field: Name */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>{t('name')}</Text>
+                  <TextInput 
+                    style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                    value={name}
+                    onChangeText={setName}
+                    editable={isEditing}
+                    placeholder="Enter Name"
+                    placeholderTextColor="#64748B"
+                  />
                 </View>
 
-                {/* Timeline Node 2: Weight */}
-                <View style={styles.timelineItem}>
-                  <View style={styles.timelineIndicator}>
-                    <View style={styles.timelineDot} />
-                    <View style={styles.timelineLine} />
-                  </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineLabel}>BODY SCALE MASS</Text>
-                    {isEditing ? (
-                      <TextInput
-                        value={weight}
-                        onChangeText={setWeight}
-                        keyboardType="numeric"
-                        style={styles.timelineInput}
-                      />
-                    ) : (
-                      <Text style={styles.timelineValue}>{weight} Kg</Text>
-                    )}
-                  </View>
+                {/* Field: Gender */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>{t('gender')}</Text>
+                  <TextInput 
+                    style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                    value={gender}
+                    onChangeText={setGender}
+                    editable={isEditing}
+                    placeholder="e.g. Male, Female, Other"
+                    placeholderTextColor="#64748B"
+                  />
                 </View>
 
-                {/* Timeline Node 3: Gender */}
-                <View style={styles.timelineItem}>
-                  <View style={styles.timelineIndicator}>
-                    <View style={styles.timelineDot} />
-                    <View style={styles.timelineLine} />
-                  </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineLabel}>PHYSIOLOGICAL GENDER</Text>
-                    {isEditing ? (
-                      <TextInput
-                        value={gender}
-                        onChangeText={setGender}
-                        style={styles.timelineInput}
-                      />
-                    ) : (
-                      <Text style={styles.timelineValue}>{gender}</Text>
-                    )}
-                  </View>
+                {/* Field: DOB */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>{t('dob')}</Text>
+                  <TextInput 
+                    style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                    value={dob}
+                    onChangeText={setDob}
+                    editable={isEditing}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#64748B"
+                  />
                 </View>
 
-                {/* Timeline Node 4: Activity Level */}
-                <View style={styles.timelineItem}>
-                  <View style={styles.timelineIndicator}>
-                    <View style={styles.timelineDot} />
-                  </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineLabel}>METABOLIC WORKLOAD RATE</Text>
-                    {isEditing ? (
-                      <View style={styles.activityToggles}>
-                        {(['low', 'medium', 'high'] as const).map((level) => (
-                          <TouchableOpacity
-                            key={level}
-                            onPress={() => setActivityLevel(level)}
-                            style={[
-                              styles.activityBtn,
-                              activityLevel === level && styles.activityBtnActive
-                            ]}
-                          >
-                            <Text style={[
-                              styles.activityBtnText,
-                              activityLevel === level && styles.activityBtnTextActive
-                            ]}>
-                              {level.toUpperCase()}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    ) : (
-                      <Text style={[styles.timelineValue, { color: '#00E5C3' }]}>
-                        {activityLevel.toUpperCase()}
-                      </Text>
-                    )}
-                  </View>
+                {/* Field: Height */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>{t('height')} (cm)</Text>
+                  <TextInput 
+                    style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                    value={height}
+                    onChangeText={setHeight}
+                    editable={isEditing}
+                    keyboardType="numeric"
+                    placeholder="Height in cm"
+                    placeholderTextColor="#64748B"
+                  />
                 </View>
 
+                {/* Field: Weight */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>{t('weight')} (kg)</Text>
+                  <TextInput 
+                    style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                    value={weight}
+                    onChangeText={setWeight}
+                    editable={isEditing}
+                    keyboardType="numeric"
+                    placeholder="Weight in kg"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
+
+                {/* Field: Blood Group */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>{t('bloodGroup')}</Text>
+                  <TextInput 
+                    style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                    value={bloodGroup}
+                    onChangeText={setBloodGroup}
+                    editable={isEditing}
+                    placeholder="e.g. O+, A-"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
               </View>
-            </View>
 
-            {/* Skills-Style Progress Bars: Biometric Targets & Calibration */}
-            <View style={styles.contentSection}>
-              <Text style={styles.sectionTitle}>BIOMETRIC PERFORMANCE CALIBRATION</Text>
+              {/* Form group: Emergency Contacts */}
+              <View style={[styles.formGroup, { marginTop: 12 }]}>
+                <Text style={styles.inputLabel}>{t('emergencyContact')} Name</Text>
+                <TextInput 
+                  style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                  value={emergencyName}
+                  onChangeText={setEmergencyName}
+                  editable={isEditing}
+                  placeholder="Contact Name"
+                  placeholderTextColor="#64748B"
+                />
+              </View>
+
+              <View style={[styles.formGroup, { marginTop: 12 }]}>
+                <Text style={styles.inputLabel}>{t('emergencyContact')} Phone</Text>
+                <TextInput 
+                  style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                  value={emergencyPhone}
+                  onChangeText={setEmergencyPhone}
+                  editable={isEditing}
+                  placeholder="Emergency Phone Number"
+                  placeholderTextColor="#64748B"
+                />
+              </View>
+
+              {/* Form group: Medical Notes */}
+              <View style={[styles.formGroup, { marginTop: 12 }]}>
+                <Text style={styles.inputLabel}>{t('medicalNotes')}</Text>
+                <TextInput 
+                  style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC', height: 80, textAlignVertical: 'top' }]}
+                  value={medicalNotes}
+                  onChangeText={setMedicalNotes}
+                  editable={isEditing}
+                  multiline={true}
+                  placeholder="Known allergies, health conditions, or diagnostic summaries..."
+                  placeholderTextColor="#64748B"
+                />
+              </View>
+            </GlassCard>
+
+            {/* Preference settings (Language / Units) */}
+            <GlassCard style={styles.preferencesCard}>
+              <Text style={[styles.sectionTitle, { color: darkMode ? '#FFFFFF' : '#0F172A', marginBottom: 16 }]}>Preferences & System Controls</Text>
               
-              <View style={styles.progressContainer}>
-                
-                {/* Progress 1: Gut Index */}
-                <View style={styles.progressItem}>
-                  <View style={styles.progressHeader}>
-                    <View style={styles.progressLabelRow}>
-                      <Brain size={12} color="#00E5C3" style={{ marginRight: 6 }} />
-                      <Text style={styles.progressName}>GUT INDEX RECOVERY</Text>
-                    </View>
-                    <Text style={styles.progressValueText}>{gutPct}%</Text>
-                  </View>
-                  <View style={styles.progressBarTrack}>
-                    <View style={[styles.progressBarFill, { width: `${gutPct}%`, backgroundColor: '#00E5C3' }]} />
+              {/* Unit Selection toggler */}
+              <View style={styles.prefItem}>
+                <View style={styles.prefLeft}>
+                  <Settings size={18} color="#00E5C3" style={{ marginRight: 10 }} />
+                  <View>
+                    <Text style={[styles.prefTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Measurement Units</Text>
+                    <Text style={styles.prefDesc}>Configure height & weight formats</Text>
                   </View>
                 </View>
-
-                {/* Progress 2: Hydration intake */}
-                <View style={styles.progressItem}>
-                  <View style={styles.progressHeader}>
-                    <View style={styles.progressLabelRow}>
-                      <Droplet size={12} color="#14B8FF" style={{ marginRight: 6 }} />
-                      <Text style={styles.progressName}>HYDRATION COEFFICIENT</Text>
-                    </View>
-                    <Text style={styles.progressValueText}>{hydrationPct}%</Text>
-                  </View>
-                  <View style={styles.progressBarTrack}>
-                    <View style={[styles.progressBarFill, { width: `${hydrationPct}%`, backgroundColor: '#14B8FF' }]} />
-                  </View>
+                <View style={styles.unitsTogRow}>
+                  <TouchableOpacity 
+                    style={[styles.unitTogBtn, units === 'metric' && styles.unitTogBtnActive]}
+                    onPress={() => setUnits('metric')}
+                  >
+                    <Text style={[styles.unitTogText, units === 'metric' && styles.unitTogTextActive]}>Metric</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.unitTogBtn, units === 'imperial' && styles.unitTogBtnActive]}
+                    onPress={() => setUnits('imperial')}
+                  >
+                    <Text style={[styles.unitTogText, units === 'imperial' && styles.unitTogTextActive]}>Imperial</Text>
+                  </TouchableOpacity>
                 </View>
-
-                {/* Progress 3: HRV Heart Rate Variability */}
-                <View style={styles.progressItem}>
-                  <View style={styles.progressHeader}>
-                    <View style={styles.progressLabelRow}>
-                      <Heart size={12} color="#FF4D6D" style={{ marginRight: 6 }} />
-                      <Text style={styles.progressName}>CARDIOVASCULAR VARIABILITY</Text>
-                    </View>
-                    <Text style={styles.progressValueText}>{hrvPct}%</Text>
-                  </View>
-                  <View style={styles.progressBarTrack}>
-                    <View style={[styles.progressBarFill, { width: `${hrvPct}%`, backgroundColor: '#FF4D6D' }]} />
-                  </View>
-                </View>
-
-                {/* Progress 4: Sleep Target */}
-                <View style={styles.progressItem}>
-                  <View style={styles.progressHeader}>
-                    <View style={styles.progressLabelRow}>
-                      <Activity size={12} color="#7C3AED" style={{ marginRight: 6 }} />
-                      <Text style={styles.progressName}>SLEEP EFFICIENT PROFILE</Text>
-                    </View>
-                    <Text style={styles.progressValueText}>{sleepPct}%</Text>
-                  </View>
-                  <View style={styles.progressBarTrack}>
-                    <View style={[styles.progressBarFill, { width: `${sleepPct}%`, backgroundColor: '#7C3AED' }]} />
-                  </View>
-                </View>
-
               </View>
-            </View>
+
+              {/* Multi-language selector dropdown */}
+              <View style={styles.prefItem}>
+                <View style={styles.prefLeft}>
+                  <Globe size={18} color="#14B8FF" style={{ marginRight: 10 }} />
+                  <View>
+                    <Text style={[styles.prefTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>App Language</Text>
+                    <Text style={styles.prefDesc}>Configure app-wide translations</Text>
+                  </View>
+                </View>
+                <View style={styles.unitsTogRow}>
+                  <TouchableOpacity 
+                    style={[styles.langBtn, language === 'en' && styles.langBtnActive]}
+                    onPress={() => setLanguage('en')}
+                  >
+                    <Text style={[styles.langText, language === 'en' && styles.langTextActive]}>EN</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.langBtn, language === 'es' && styles.langBtnActive]}
+                    onPress={() => setLanguage('es')}
+                  >
+                    <Text style={[styles.langText, language === 'es' && styles.langTextActive]}>ES</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.langBtn, language === 'ja' && styles.langBtnActive]}
+                    onPress={() => setLanguage('ja')}
+                  >
+                    <Text style={[styles.langText, language === 'ja' && styles.langTextActive]}>JA</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+
+              {/* Security Actions */}
+              <View style={styles.securityRow}>
+                <TouchableOpacity 
+                  style={[styles.wipeBtn, { borderColor: darkMode ? 'rgba(255,77,109,0.2)' : 'rgba(255,77,109,0.3)' }]}
+                  onPress={handleWipeLocalStorage}
+                >
+                  <Lock size={14} color="#FF4D6D" style={{ marginRight: 6 }} />
+                  <Text style={styles.wipeBtnText}>Reset Local Storage</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.logoutBtn} 
+                  onPress={logout}
+                >
+                  <LogOut size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.logoutBtnText}>{t('logout')}</Text>
+                </TouchableOpacity>
+              </View>
+            </GlassCard>
 
           </View>
-
         </View>
 
       </ScrollView>
@@ -415,401 +622,339 @@ const getStyles = (darkMode: boolean) => StyleSheet.create({
     backgroundColor: darkMode ? '#050B18' : '#F8FAFC',
   },
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    padding: 24,
     paddingBottom: 60,
   },
-  
-  // Header Style
-  dossierHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    marginBottom: 20,
-    marginTop: 8,
-  },
-  headerLeft: {
-    flex: 1,
-    minWidth: 280,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  dossierName: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 26,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  dossierTitle: {
+  bannerSubtitle: {
+    fontSize: 12,
+    fontWeight: '800',
     color: '#00E5C3',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 2,
-    marginTop: 4,
-  },
-  headerRight: {
-    minWidth: 200,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
     marginBottom: 4,
   },
-  contactText: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.6)' : '#475569',
-    fontSize: 9,
-    fontWeight: '700',
-    marginLeft: 8,
-    letterSpacing: 0.2,
+  bannerTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: darkMode ? '#FFFFFF' : '#0F172A',
+    letterSpacing: -1,
   },
-  
+  layoutGrid: {
+    flexDirection: Platform.OS === 'web' && Dimensions.get('window').width >= 768 ? 'row' : 'column',
+    gap: 24,
+  },
+  gridColumn: {
+    gap: 24,
+  },
+  profileSummaryCard: {
+    padding: 24,
+    alignItems: 'center',
+    borderRadius: 24,
+  },
+  avatarContainer: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  avatarWrapper: {
+    position: 'relative',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    overflow: 'visible',
+    marginBottom: 16,
+  },
+  avatarImg: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraIconBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#00E5C3',
+    padding: 8,
+    borderRadius: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  removePhotoBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 77, 109, 0.08)',
+    marginBottom: 12,
+  },
+  removePhotoBtnText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FF4D6D',
+  },
+  profileName: {
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  profileEmail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    fontSize: 13,
+    color: '#8E9AA6',
+    fontWeight: '500',
+    marginBottom: 16,
+  },
+  locationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    maxWidth: '90%',
+  },
+  locationText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   divider: {
     height: 1,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-    marginBottom: 24,
+    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)',
+    width: '100%',
+    marginVertical: 20,
   },
-
-  // Responsive Layout columns
-  desktopColumns: {
+  completionContainer: {
+    width: '100%',
+  },
+  completionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  mobileColumns: {
-    flexDirection: 'column',
-  },
-  
-  // Left Sidebar column styling
-  leftColumnDesktop: {
-    width: '32%',
-    borderRightWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
-    paddingRight: 24,
-  },
-  columnFullMobile: {
-    width: '100%',
-    marginBottom: 24,
-  },
-  
-  // Right Column Styling
-  rightColumnDesktop: {
-    width: '64%',
-    paddingLeft: 12,
-  },
-
-  // Left Column components
-  avatarCard: {
     alignItems: 'center',
-    marginBottom: 24,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
+    marginBottom: 8,
+  },
+  completionLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  completionVal: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#00E5C3',
+  },
+  progressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#00E5C3',
+    borderRadius: 3,
+  },
+  statsCard: {
     padding: 20,
+    borderRadius: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    marginBottom: 16,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 16,
+  },
+  statBox: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: darkMode ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)',
+    borderWidth: 1,
+    borderColor: darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#8E9AA6',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  statUnit: {
+    fontSize: 12,
+    color: '#8E9AA6',
+  },
+  detailsCard: {
+    padding: 24,
+    borderRadius: 24,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
-  avatarImage: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    borderWidth: 2.5,
-    borderColor: '#00E5C3',
-    marginBottom: 14,
+  editBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  formGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  formGroup: {
+    width: Platform.OS === 'web' && Dimensions.get('window').width >= 768 ? '47%' : '100%',
+    minWidth: 200,
+    flexGrow: 1,
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#8E9AA6',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  textInput: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  preferencesCard: {
+    padding: 24,
+    borderRadius: 24,
+  },
+  prefItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  prefLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  prefTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  prefDesc: {
+    fontSize: 11,
+    color: '#8E9AA6',
+    fontWeight: '500',
+  },
+  unitsTogRow: {
+    flexDirection: 'row',
+    borderRadius: 20,
+    padding: 3,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  unitTogBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 18,
+  },
+  unitTogBtnActive: {
+    backgroundColor: '#00E5C3',
+  },
+  unitTogText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#8E9AA6',
+  },
+  unitTogTextActive: {
+    color: '#050B18',
+  },
+  langBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+  },
+  langBtnActive: {
+    backgroundColor: '#14B8FF',
+  },
+  langText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#8E9AA6',
+  },
+  langTextActive: {
+    color: '#FFFFFF',
+  },
+  securityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  wipeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  wipeBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FF4D6D',
   },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 77, 109, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 77, 109, 0.18)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-  },
-  logoutText: {
-    color: '#FF4D6D',
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-    marginLeft: 6,
-  },
-  sidebarSection: {
-    marginBottom: 24,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
-    padding: 16,
+    backgroundColor: '#FF4D6D',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#FF4D6D',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  sidebarSectionTitle: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 10,
+  logoutBtnText: {
+    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 1.5,
-    borderBottomWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-    paddingBottom: 6,
-    marginBottom: 10,
-  },
-  sidebarSectionText: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.7)' : '#334155',
-    fontSize: 10,
-    lineHeight: 15,
-    fontWeight: '600',
-  },
-  
-  // Settings Units Toggle
-  unitsToggleWrapper: {
-    flexDirection: 'row',
-    backgroundColor: darkMode ? 'rgba(5, 11, 24, 0.6)' : '#F1F5F9',
-    padding: 3,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)',
-  },
-  unitBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 10,
-  },
-  unitBtnActive: {
-    backgroundColor: '#00E5C3',
-  },
-  unitBtnText: {
-    color: darkMode ? '#8E9AA6' : '#64748B',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  unitBtnTextActive: {
-    color: '#050B18',
-  },
-  
-  // Contact inputs
-  contactInputForm: {
-    marginBottom: 10,
-  },
-  formInput: {
-    backgroundColor: darkMode ? 'rgba(5, 11, 24, 0.6)' : '#FFFFFF',
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 10,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  addContactBtn: {
-    backgroundColor: '#00E5C3',
-    paddingVertical: 8,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  addContactBtnText: {
-    color: '#050B18',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
-    marginLeft: 6,
-  },
-  contactsList: {
-    marginTop: 8,
-  },
-  contactCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
-    borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.06)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginBottom: 6,
-  },
-  contactInfo: {
-    flex: 1,
-  },
-  contactCardName: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  contactCardPhone: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.45)' : '#64748B',
-    fontSize: 8,
-    marginTop: 1,
-  },
-  deleteContactBtn: {
-    padding: 6,
-    backgroundColor: 'rgba(255, 77, 109, 0.05)',
-    borderRadius: 8,
-  },
-
-  // Right Column Content Sections
-  contentSection: {
-    marginBottom: 24,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF',
-    padding: 20,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.06)',
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-    paddingBottom: 10,
-    marginBottom: 18,
-  },
-  sectionTitle: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
-  editBtn: {
-    padding: 6,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-  },
-  
-  // Timeline Styling
-  timelineContainer: {
-    paddingLeft: 6,
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    marginBottom: 6,
-  },
-  timelineIndicator: {
-    alignItems: 'center',
-    marginRight: 16,
-    width: 12,
-  },
-  timelineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#00E5C3',
-    borderWidth: 1.5,
-    borderColor: darkMode ? '#050B18' : '#FFFFFF',
-    marginTop: 5,
-    shadowColor: '#00E5C3',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-  },
-  timelineLine: {
-    width: 1.5,
-    flex: 1,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-    marginTop: 4,
-    minHeight: 28,
-  },
-  timelineContent: {
-    flex: 1,
-    paddingBottom: 14,
-  },
-  timelineLabel: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.45)' : '#64748B',
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  timelineValue: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 13,
-    fontWeight: '900',
-    marginTop: 2,
-    letterSpacing: 0.3,
-  },
-  timelineInput: {
-    backgroundColor: darkMode ? 'rgba(5, 11, 24, 0.6)' : '#FFFFFF',
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    borderWidth: 1,
-    borderColor: '#00E5C3',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    fontSize: 11,
-    fontWeight: '800',
-    marginTop: 4,
-    maxWidth: 160,
-  },
-  activityToggles: {
-    flexDirection: 'row',
-    marginTop: 6,
-  },
-  activityBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-    borderRadius: 8,
-    marginRight: 6,
-  },
-  activityBtnActive: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
-  },
-  activityBtnText: {
-    color: darkMode ? '#8E9AA6' : '#64748B',
-    fontSize: 8,
-    fontWeight: '900',
-  },
-  activityBtnTextActive: {
     color: '#FFFFFF',
-  },
-
-  // Progress Bars Styling
-  progressContainer: {
-    marginTop: 8,
-  },
-  progressItem: {
-    marginBottom: 16,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  progressLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  progressName: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.75)' : '#475569',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  progressValueText: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  progressBarTrack: {
-    height: 6,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.06)',
-    borderRadius: 3,
-    overflow: 'hidden',
-    borderWidth: 0.5,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
   },
 });

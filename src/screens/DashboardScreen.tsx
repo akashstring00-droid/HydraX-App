@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, useWindowDimensions, Platform, ActivityIndicator, Alert, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   Bell, 
@@ -17,7 +17,14 @@ import {
   Moon,
   Sun,
   TrendingUp,
-  ChevronDown
+  ChevronDown,
+  Activity,
+  Printer,
+  Calendar,
+  Thermometer,
+  Gauge,
+  TrendingDown,
+  User
 } from 'lucide-react-native';
 
 import { useAuthStore } from '../store/useAuthStore';
@@ -30,21 +37,26 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { GlassCard } from '../components/GlassCard';
 import { CircularRing } from '../components/CircularRing';
 import { Waveform } from '../components/Waveform';
+import { NotificationCenter } from '../components/NotificationCenter';
+import { Timeline } from '../components/Timeline';
+import { useTranslation } from '../store/i18n';
 
 import Svg, { Path, Circle, Rect, Line, G, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 export const DashboardScreen: React.FC = () => {
   const { width } = useWindowDimensions();
+  const { t } = useTranslation();
   const { user } = useAuthStore();
-  const { currentVitals, prediction } = useVitalsStore();
+  const { currentVitals, prediction, dailyHistory } = useVitalsStore();
   const { currentIntake, dailyWaterTarget, logWater } = useWaterStore();
   const { connectedDevice, batteryLevel } = useBLEStore();
-  const { recoveryScore } = useDiarrheaStore();
+  const { logs: diarrheaLogs, recoveryScore } = useDiarrheaStore();
 
   // Theme states
   const darkMode = useSettingsStore((state) => state.darkMode);
   const setDarkMode = useSettingsStore((state) => state.setDarkMode);
   const setActiveTab = useSettingsStore((state) => state.setActiveTab);
+  const addNotification = useSettingsStore((state) => state.addNotification);
 
   // Timeframe states
   const [hydrationTimeframe, setHydrationTimeframe] = useState<'7 Days' | '30 Days'>('7 Days');
@@ -53,25 +65,61 @@ export const DashboardScreen: React.FC = () => {
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencySMSState, setEmergencySMSState] = useState<'idle' | 'sending' | 'sent'>('idle');
 
+  // New UI features states
+  const [notifCenterVisible, setNotifCenterVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // Skeleton loading state
+
   const isDesktop = width >= 768;
   const quickLogAmounts = [250, 350, 500];
+
+  // Force a loading simulation when pulling sync
+  const triggerManualSync = () => {
+    setIsLoading(true);
+    addNotification('Manual Sync Started', 'Syncing physiological metrics from wearable...', 'info');
+    setTimeout(() => {
+      setIsLoading(false);
+      addNotification('Biometrics Synchronized', 'Vitals and hydration databases successfully updated.', 'success');
+    }, 1500);
+  };
 
   const handleTriggerEmergencySMS = () => {
     setEmergencySMSState('sending');
     setTimeout(() => {
       setEmergencySMSState('sent');
+      addNotification('Emergency Broadcast Sent', 'Dehydration alert dispatched to primary contacts.', 'critical');
     }, 1500);
   };
 
   const isHighRisk = prediction.riskLevel === 'High';
 
-  // Fluid Balance Donut Calculation
+  // Derived metrics calculations
+  const hydrationPct = Math.round(Math.min(100, (currentIntake / dailyWaterTarget) * 100));
+  const heartRateValue = currentVitals.heartRate;
+  const hrvValue = currentVitals.hrv;
+  const skinTempValue = currentVitals.skinTemp;
+  const recoveryValue = recoveryScore;
+
+  // Stool Health Trend
+  const getStoolHealthTrend = () => {
+    if (diarrheaLogs.length === 0) return 'Optimal (Bristol 4)';
+    const lastLog = diarrheaLogs[0];
+    if (lastLog.stoolType >= 6) return 'Diarrhea Symptoms';
+    if (lastLog.stoolType <= 2) return 'Constipation Detected';
+    return 'Optimal (Ideal)';
+  };
+
+  const stoolHealth = getStoolHealthTrend();
+  
+  // Stress index calculation based on HRV and heart rate
+  const stressIndex = Math.max(10, Math.min(100, Math.round(100 - (hrvValue * 1.2) + (heartRateValue - 70))));
+
+  // Fluid balance donut
   const totalIntake = currentIntake;
   const sweatLoss = Math.round(currentVitals.motion * 800) || 800;
-  const bowelLoss = 100; // Mock base loss
+  const bowelLoss = 100;
   const netBalance = totalIntake - (sweatLoss + bowelLoss);
 
-  // SVG Donut Segment Drawer Helper
+  // SVG Donut segment
   const drawDonutSegment = (
     pct: number, 
     offsetPct: number, 
@@ -101,6 +149,15 @@ export const DashboardScreen: React.FC = () => {
     );
   };
 
+  // Browser PDF Report Export
+  const triggerPDFExport = () => {
+    if (Platform.OS === 'web') {
+      window.print();
+    } else {
+      Alert.alert('Export PDF', 'PDF export is supported on web browsers.');
+    }
+  };
+
   // Dynamic Theme Colors
   const containerBg = darkMode ? '#050B18' : '#F8FAFC';
   const borderThemeColor = darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)';
@@ -113,22 +170,70 @@ export const DashboardScreen: React.FC = () => {
 
   const styles = getStyles(darkMode);
 
+  // Render a Premium Healthtech card
+  const renderMetricCard = (
+    title: string,
+    value: string | number,
+    sub: string,
+    icon: React.ReactNode,
+    color: string,
+    badgeText?: string
+  ) => {
+    if (isLoading) {
+      return (
+        <GlassCard style={styles.premiumCard}>
+          <ActivityIndicator size="small" color="#00E5C3" style={{ alignSelf: 'flex-start', marginBottom: 10 }} />
+          <View style={styles.skeletonText} />
+          <View style={[styles.skeletonText, { width: '80%', marginTop: 8 }]} />
+          <View style={[styles.skeletonText, { width: '50%', marginTop: 12 }]} />
+        </GlassCard>
+      );
+    }
+
+    return (
+      <GlassCard style={styles.premiumCard} borderColor={borderThemeColor}>
+        <View style={styles.metricCardHeader}>
+          <View style={[styles.metricIconBox, { backgroundColor: color }]}>
+            {icon}
+          </View>
+          {badgeText && (
+            <View style={[styles.metricBadge, { backgroundColor: darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }]}>
+              <Text style={[styles.metricBadgeText, { color: color }]}>{badgeText}</Text>
+            </View>
+          )}
+        </View>
+        <Text style={[styles.metricValue, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>{value}</Text>
+        <Text style={[styles.metricTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>{title}</Text>
+        <Text style={styles.metricSub}>{sub}</Text>
+      </GlassCard>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={isDesktop ? [] : ['top']}>
+      
+      {/* Notifications overlay panel */}
+      <NotificationCenter visible={notifCenterVisible} onClose={() => setNotifCenterVisible(false)} />
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
         {/* Top Header Section */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greetingText}>Good Morning, {user?.displayName || 'Akash'} 👋</Text>
-            <Text style={styles.subtitleText}>Here's your health overview for today</Text>
+            <Text style={styles.greetingText}>{t('greeting')}, {user?.displayName || 'Akash'} 👋</Text>
+            <Text style={styles.subtitleText}>{t('overview')}</Text>
           </View>
           
           <View style={styles.headerRightRow}>
+            {/* Sync Trigger button */}
+            <TouchableOpacity style={styles.syncBtn} onPress={triggerManualSync}>
+              <RefreshCw size={14} color="#00E5C3" />
+            </TouchableOpacity>
+
             {/* Connection badge */}
             <View style={styles.connectedBadge}>
               <View style={[styles.connectedDot, { backgroundColor: connectedDevice ? '#00E5C3' : '#FF4D6D' }]} />
-              <Text style={styles.connectedText}>{connectedDevice ? 'Band Connected' : 'Band Offline'}</Text>
+              <Text style={styles.connectedText}>{connectedDevice ? t('bandConnected') : t('bandOffline')}</Text>
             </View>
 
             {/* Light/Dark mode switcher */}
@@ -147,738 +252,305 @@ export const DashboardScreen: React.FC = () => {
             {/* Notification bell */}
             <TouchableOpacity 
               style={styles.bellBtn} 
+              onPress={() => setNotifCenterVisible(true)}
               activeOpacity={0.7}
-              onPress={() => setActiveTab('insights')}
             >
               <Bell size={16} color={darkMode ? '#FFFFFF' : '#0F172A'} />
-              <View style={styles.bellBadge} />
+              {/* Unread dot indicator */}
+              <View style={styles.bellUnreadDot} />
             </TouchableOpacity>
 
-            {/* User Profile avatar */}
+            {/* Profile trigger */}
             <TouchableOpacity 
-              style={styles.userProfileWrapper}
+              style={styles.profileBtn} 
               onPress={() => setActiveTab('profile')}
-              activeOpacity={0.7}
+              activeOpacity={0.8}
             >
-              <View style={styles.userAvatar}>
-                <Text style={styles.avatarLetter}>{(user?.displayName || 'A')[0].toUpperCase()}</Text>
-              </View>
-              <View style={styles.userInfoText}>
-                <Text style={styles.usernameText}>{user?.displayName || 'Akash'}</Text>
-                <Text style={styles.premiumText}>Premium</Text>
-              </View>
-              <ChevronDown size={14} color={darkMode ? '#8E9AA6' : '#64748B'} style={styles.dropdownChevron} />
+              {user?.avatar ? (
+                <Image source={{ uri: user.avatar }} style={styles.avatarImg} />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <User size={16} color="#050B18" strokeWidth={2.5} />
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Pulsing Emergency Warning Banner */}
+        {/* High Dehydration Risk alert */}
         {isHighRisk && (
-          <TouchableOpacity
-            onPress={() => setShowEmergencyModal(true)}
-            activeOpacity={0.9}
-            style={styles.emergencyBanner}
-          >
-            <View style={styles.bannerLeftRow}>
-              <AlertTriangle size={18} color="#FF4D6D" />
-              <View style={styles.bannerTextContainer}>
-                <Text style={styles.bannerTitle}>Critical Dehydration Risk</Text>
-                <Text style={styles.bannerSubtitle}>Severe GI fluid deficit monitored. Triage emergency protocol.</Text>
-              </View>
-            </View>
-            <View style={styles.bannerActionBadge}>
-              <Text style={styles.bannerActionText}>ALERT</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* Hero Section: Grid of 4 Vitals Cards */}
-        <View style={isDesktop ? styles.heroRowDesktop : styles.heroGridMobile}>
-          
-          {/* Card 1: Hydration Level */}
-          <GlassCard style={isDesktop ? styles.heroCardDesktop : styles.heroCardMobile}>
-            <View style={styles.heroCardContent}>
-              <View style={styles.heroCardLeft}>
-                <View style={styles.cardHeaderRow}>
-                  <Droplet size={14} color="#00E5C3" fill="#00E5C3" style={{ marginRight: 6 }} />
-                  <Text style={styles.heroCardTitle}>Hydration Level</Text>
-                </View>
-                <Text style={[styles.heroCardValue, { color: '#00E5C3' }]}>{prediction.hydrationScore}%</Text>
-                <Text style={styles.heroCardStatus}>• Optimal</Text>
-                <Text style={[styles.heroCardTrend, { color: '#00E5C3' }]}>↗ 8% vs yesterday</Text>
-              </View>
-              <View style={styles.heroCardRight}>
-                <CircularRing
-                  size={64}
-                  strokeWidth={5}
-                  value={prediction.hydrationScore}
-                  label={`${prediction.hydrationScore}%`}
-                  subtitle=""
-                  gradientColors={['#00E5C3', '#00FFB2']}
-                  glowColor="#00E5C3"
-                  hasGlow={false}
-                />
-              </View>
-            </View>
-          </GlassCard>
-
-          {/* Card 2: Dehydration Risk */}
-          <GlassCard style={isDesktop ? styles.heroCardDesktop : styles.heroCardMobile}>
-            <View style={styles.heroCardContent}>
-              <View style={styles.heroCardLeft}>
-                <View style={styles.cardHeaderRow}>
-                  <Shield size={14} color="#00FFB2" style={{ marginRight: 6 }} />
-                  <Text style={styles.heroCardTitle}>Dehydration Risk</Text>
-                </View>
-                <Text style={[styles.heroCardValue, { color: '#00FFB2' }]}>{prediction.riskLevel}</Text>
-                <Text style={styles.heroCardSubStatus}>Risk Level</Text>
-                <Text style={[styles.heroCardTrend, { color: '#00FFB2' }]}>↘ Improved</Text>
-              </View>
-              <View style={styles.heroCardRight}>
-                <CircularRing
-                  size={64}
-                  strokeWidth={5}
-                  value={prediction.riskLevel === 'Low' ? 25 : prediction.riskLevel === 'Medium' ? 60 : 90}
-                  label={prediction.riskLevel}
-                  subtitle=""
-                  gradientColors={
-                    prediction.riskLevel === 'Low' 
-                      ? ['#00FFB2', '#00E5C3'] 
-                      : prediction.riskLevel === 'Medium' 
-                      ? ['#FFAD33', '#FF4D6D'] 
-                      : ['#FF4D6D', '#7C3AED']
-                  }
-                  glowColor={prediction.riskLevel === 'Low' ? '#00FFB2' : '#FF4D6D'}
-                  hasGlow={false}
-                />
-              </View>
-            </View>
-          </GlassCard>
-
-          {/* Card 3: Heart Rate */}
-          <GlassCard style={isDesktop ? styles.heroCardDesktop : styles.heroCardMobile}>
-            <View style={styles.heroCardContent}>
-              <View style={styles.heroCardLeft}>
-                <View style={styles.cardHeaderRow}>
-                  <Heart size={14} color="#FF4D6D" fill="#FF4D6D" style={{ marginRight: 6 }} />
-                  <Text style={styles.heroCardTitle}>Heart Rate</Text>
-                </View>
-                <Text style={[styles.heroCardValue, { color: '#FF4D6D' }]}>{currentVitals.heartRate} BPM</Text>
-                <Text style={styles.heroCardSubStatus}>Normal Range</Text>
-                <Text style={[styles.heroCardTrend, { color: '#FF4D6D' }]}>↗ 5 bpm vs yesterday</Text>
-              </View>
-              <View style={styles.heroCardRight}>
-                <CircularRing
-                  size={64}
-                  strokeWidth={5}
-                  value={Math.min(100, Math.max(0, ((currentVitals.heartRate - 50) / 70) * 100))}
-                  label={`${currentVitals.heartRate}`}
-                  subtitle=""
-                  gradientColors={['#FF4D6D', '#7C3AED']}
-                  glowColor="#FF4D6D"
-                  hasGlow={false}
-                />
-              </View>
-            </View>
-          </GlassCard>
-
-          {/* Card 4: Recovery Score */}
-          <GlassCard style={isDesktop ? styles.heroCardDesktop : styles.heroCardMobile}>
-            <View style={styles.heroCardContent}>
-              <View style={styles.heroCardLeft}>
-                <View style={styles.cardHeaderRow}>
-                  <RefreshCw size={14} color="#7C3AED" style={{ marginRight: 6 }} />
-                  <Text style={styles.heroCardTitle}>Recovery Score</Text>
-                </View>
-                <Text style={[styles.heroCardValue, { color: '#C084FC' }]}>{recoveryScore}%</Text>
-                <Text style={styles.heroCardSubStatus}>Good Recovery</Text>
-                <Text style={[styles.heroCardTrend, { color: '#C084FC' }]}>↗ 6% vs yesterday</Text>
-              </View>
-              <View style={styles.heroCardRight}>
-                <CircularRing
-                  size={64}
-                  strokeWidth={5}
-                  value={recoveryScore}
-                  label={`${recoveryScore}%`}
-                  subtitle=""
-                  gradientColors={['#7C3AED', '#00FFB2']}
-                  glowColor="#7C3AED"
-                  hasGlow={false}
-                />
-              </View>
-            </View>
-          </GlassCard>
-
-        </View>
-
-        {/* Analytics Section: Charts */}
-        <View style={isDesktop ? styles.analyticsGridDesktop : styles.analyticsGridMobile}>
-          
-          {/* Chart 1: Hydration Trend */}
-          <GlassCard style={isDesktop ? styles.chartCardColumn : styles.chartCardMobile}>
-            <View style={styles.cardHeaderWithAction}>
-              <View style={styles.cardHeaderLabelRow}>
-                <Droplet size={14} color="#00E5C3" fill="#00E5C3" style={{ marginRight: 8 }} />
-                <Text style={styles.analyticsCardTitle}>Hydration Trend</Text>
-              </View>
-              <TouchableOpacity 
-                style={styles.durationSelector}
-                onPress={() => setHydrationTimeframe(hydrationTimeframe === '7 Days' ? '30 Days' : '7 Days')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.durationText}>{hydrationTimeframe}</Text>
-                <ChevronDown size={12} color={darkMode ? '#8E9AA6' : '#64748B'} style={{ marginLeft: 4 }} />
-              </TouchableOpacity>
-            </View>
-
-            {/* SVG Line Chart */}
-            <View style={styles.chartViewport}>
-              {(() => {
-                const chartHeight = 160;
-                const chartWidth = isDesktop ? (width - 260 - 48) * 0.375 - 32 : width - 72;
-                const paddingLeft = 32;
-                const paddingBottom = 20;
-                const graphWidth = chartWidth - paddingLeft - 16;
-                const graphHeight = chartHeight - paddingBottom - 10;
-
-                const points = hydrationTimeframe === '7 Days'
-                  ? [85, 83, 89, 92, 91, 93, 95]
-                  : [80, 82, 81, 84, 83, 85, 86, 84, 87, 85, 88, 86, 89, 87, 90, 89, 91, 88, 92, 90, 93, 91, 94, 92, 95, 93, 96, 94, 96, 95];
-                const xSpacing = graphWidth / (points.length - 1);
-                
-                let linePath = '';
-                let areaPath = '';
-                
-                points.forEach((val, i) => {
-                  const x = paddingLeft + i * xSpacing;
-                  const y = graphHeight - (val / 100) * graphHeight + 10;
-                  
-                  if (i === 0) {
-                    linePath = `M ${x} ${y}`;
-                    areaPath = `M ${x} ${graphHeight + 10} L ${x} ${y}`;
-                  } else {
-                    linePath += ` L ${x} ${y}`;
-                    areaPath += ` L ${x} ${y}`;
-                  }
-                  
-                  if (i === points.length - 1) {
-                    areaPath += ` L ${x} ${graphHeight + 10} Z`;
-                  }
-                });
-
-                const labels = hydrationTimeframe === '7 Days'
-                  ? ['Jun 02', 'Jun 03', 'Jun 04', 'Jun 05', 'Jun 06', 'Jun 07', 'Jun 08']
-                  : ['May 10', 'May 17', 'May 24', 'May 31', 'Jun 08'];
-
-                return (
-                  <Svg width={chartWidth} height={chartHeight}>
-                    <Defs>
-                      <LinearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0%" stopColor="#00E5C3" stopOpacity={0.25} />
-                        <Stop offset="100%" stopColor="#00E5C3" stopOpacity={0.0} />
-                      </LinearGradient>
-                    </Defs>
-                    
-                    {/* Horizontal grid lines */}
-                    {[0, 0.25, 0.5, 0.75, 1].map((p, idx) => {
-                      const y = graphHeight * p + 10;
-                      const val = 100 - p * 100;
-                      return (
-                        <G key={idx}>
-                          <Line x1={paddingLeft} y1={y} x2={chartWidth - 16} y2={y} stroke={svgLineColor} strokeWidth={1} />
-                          <SvgText x={paddingLeft - 8} y={y + 3} fill={textSecondary} fontSize="8" fontWeight="bold" textAnchor="end">{val}%</SvgText>
-                        </G>
-                      );
-                    })}
-
-                    {/* Area shading */}
-                    <Path d={areaPath} fill="url(#blueGrad)" />
-
-                    {/* Trend Line */}
-                    <Path d={linePath} fill="none" stroke="#00E5C3" strokeWidth={2} strokeLinecap="round" />
-
-                    {/* Nodes */}
-                    {points.map((val, i) => {
-                      const x = paddingLeft + i * xSpacing;
-                      const y = graphHeight - (val / 100) * graphHeight + 10;
-                      const isLast = i === points.length - 1;
-
-                      return (
-                        <G key={i}>
-                          <Circle cx={x} cy={y} r={points.length > 15 ? 1.5 : 3} fill="#00E5C3" />
-                          {isLast && (
-                            <G>
-                              <Rect x={x - 16} y={y - 18} width={26} height={12} rx={3} fill="#00E5C3" />
-                              <SvgText x={x - 3} y={y - 9} fill="#050B18" fontSize="8" fontWeight="900" textAnchor="middle">{val}%</SvgText>
-                            </G>
-                          )}
-                        </G>
-                      );
-                    })}
-
-                    {/* X-axis labels */}
-                    {labels.map((lbl, i) => {
-                      const x = paddingLeft + i * (graphWidth / (labels.length - 1));
-                      return (
-                        <SvgText key={i} x={x} y={chartHeight - 2} fill={textSecondary} fontSize="8" fontWeight="bold" textAnchor="middle">
-                          {lbl}
-                        </SvgText>
-                      );
-                    })}
-                  </Svg>
-                );
-              })()}
-            </View>
-
-            {/* Bottom Legend */}
-            <View style={styles.chartLegendRow}>
-              <View style={styles.legendDotBox}>
-                <View style={[styles.legendDotSquare, { backgroundColor: '#00E5C3' }]} />
-                <Text style={styles.legendLabelText}>Hydration Level</Text>
-              </View>
-            </View>
-          </GlassCard>
-
-          {/* Chart 2: Heart Rate Variability */}
-          <GlassCard style={isDesktop ? styles.chartCardColumn : styles.chartCardMobile}>
-            <View style={styles.cardHeaderWithAction}>
-              <View style={styles.cardHeaderLabelRow}>
-                <Heart size={14} color="#FF4D6D" fill="#FF4D6D" style={{ marginRight: 8 }} />
-                <Text style={styles.analyticsCardTitle}>Heart Rate Variability</Text>
-              </View>
-              <TouchableOpacity 
-                style={styles.durationSelector}
-                onPress={() => setHrvTimeframe(hrvTimeframe === '7 Days' ? '30 Days' : '7 Days')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.durationText}>{hrvTimeframe}</Text>
-                <ChevronDown size={12} color={darkMode ? '#8E9AA6' : '#64748B'} style={{ marginLeft: 4 }} />
-              </TouchableOpacity>
-            </View>
-
-            {/* SVG Bar Chart */}
-            <View style={styles.chartViewport}>
-              {(() => {
-                const chartHeight = 160;
-                const chartWidth = isDesktop ? (width - 260 - 48) * 0.375 - 32 : width - 72;
-                const paddingLeft = 28;
-                const paddingBottom = 20;
-                const graphWidth = chartWidth - paddingLeft - 16;
-                const graphHeight = chartHeight - paddingBottom - 10;
-
-                const values = hrvTimeframe === '7 Days'
-                  ? [62, 65, 72, 68, 60, 75, 78]
-                  : [58, 60, 62, 61, 63, 62, 64, 63, 65, 64, 66, 65, 67, 66, 68, 67, 69, 68, 70, 69, 71, 70, 72, 71, 73, 72, 74, 73, 75, 78];
-                const xSpacing = graphWidth / (values.length - 1);
-                const barWidth = hrvTimeframe === '7 Days' ? 8 : 3;
-
-                const labels = hrvTimeframe === '7 Days'
-                  ? ['Jun 02', 'Jun 03', 'Jun 04', 'Jun 05', 'Jun 06', 'Jun 07', 'Jun 08']
-                  : ['May 10', 'May 17', 'May 24', 'May 31', 'Jun 08'];
-
-                return (
-                  <Svg width={chartWidth} height={chartHeight}>
-                    <Defs>
-                      <LinearGradient id="purplePinkGrad" x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0%" stopColor="#FF4D6D" />
-                        <Stop offset="100%" stopColor="#7C3AED" />
-                      </LinearGradient>
-                    </Defs>
-
-                    {/* Horizontal grid lines */}
-                    {[0, 0.25, 0.5, 0.75, 1].map((p, idx) => {
-                      const y = graphHeight * p + 10;
-                      const val = 100 - p * 100;
-                      return (
-                        <G key={idx}>
-                          <Line x1={paddingLeft} y1={y} x2={chartWidth - 16} y2={y} stroke={svgLineColor} strokeWidth={1} />
-                          <SvgText x={paddingLeft - 8} y={y + 3} fill={textSecondary} fontSize="8" fontWeight="bold" textAnchor="end">{val}</SvgText>
-                        </G>
-                      );
-                    })}
-
-                    {/* Vertical Bars */}
-                    {values.map((val, i) => {
-                      const x = paddingLeft + i * xSpacing - barWidth / 2;
-                      const barHeight = (val / 100) * graphHeight;
-                      const y = graphHeight - barHeight + 10;
-
-                      return (
-                        <Rect
-                          key={i}
-                          x={x}
-                          y={y}
-                          width={barWidth}
-                          height={barHeight}
-                          rx={barWidth > 4 ? 3 : 1}
-                          fill="url(#purplePinkGrad)"
-                        />
-                      );
-                    })}
-
-                    {/* X-axis labels */}
-                    {labels.map((lbl, i) => {
-                      const x = paddingLeft + i * (graphWidth / (labels.length - 1));
-                      return (
-                        <SvgText key={i} x={x} y={chartHeight - 2} fill={textSecondary} fontSize="8" fontWeight="bold" textAnchor="middle">
-                          {lbl}
-                        </SvgText>
-                      );
-                    })}
-                  </Svg>
-                );
-              })()}
-            </View>
-
-            {/* Bottom Legend */}
-            <View style={styles.chartLegendRow}>
-              <View style={styles.legendDotBox}>
-                <View style={[styles.legendDotSquare, { backgroundColor: '#FF4D6D' }]} />
-                <Text style={styles.legendLabelText}>HRV (ms)</Text>
-              </View>
-            </View>
-          </GlassCard>
-
-          {/* AI Status Report */}
-          <GlassCard style={isDesktop ? styles.aiReportColumn : styles.chartCardMobile}>
-            <View style={styles.cardHeaderWithAction}>
-              <View style={styles.cardHeaderLabelRow}>
-                <Sparkles size={14} color="#00E5C3" fill="#00E5C3" style={{ marginRight: 8 }} />
-                <Text style={styles.analyticsCardTitle}>AI Status Report</Text>
-              </View>
-              <View style={styles.confidenceBadge}>
-                <Text style={styles.confidenceText}>CONFIDENCE: 94%</Text>
-              </View>
-            </View>
-
-            <View style={styles.reportItem}>
-              <Text style={styles.reportLabel}>Dehydration Risk</Text>
-              <Text style={[styles.reportValue, { color: '#00FFB2' }]}>Low Risk</Text>
-            </View>
-
-            <View style={styles.reportItem}>
-              <Text style={styles.reportLabel}>Current Deficit</Text>
-              <Text style={styles.reportValue}>0 ml</Text>
-            </View>
-
-            <View style={styles.reportTextContainer}>
-              <Text style={styles.reportDescText}>
-                Optimal: Hydration level is fully aligned with metabolic consumption. Maintain regular sipping intervals.
+          <View style={styles.dangerAlertBanner}>
+            <AlertTriangle size={20} color="#FFFFFF" style={{ marginRight: 12 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dangerTitle}>Dehydration Alert: High Physiological Strain</Text>
+              <Text style={styles.dangerDesc}>
+                Sensors register abnormal PPG deflection. Fluid replenishment recommended immediately.
               </Text>
             </View>
+            <TouchableOpacity 
+              style={styles.triggerAlertBtn} 
+              onPress={() => setShowEmergencyModal(true)}
+            >
+              <Text style={styles.triggerAlertText}>Emergency Dispatches</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-            {/* Quick Water Logging Card */}
-            <View style={styles.quickLogWrapper}>
-              <Text style={styles.quickLogTitle}>QUICK LOG WATER</Text>
-              <View style={styles.logButtonsRow}>
+        {/* Core Vitals Rings Grid */}
+        <View style={styles.ringsSectionGrid}>
+          
+          <GlassCard style={styles.ringCard} borderColor={borderThemeColor}>
+            <CircularRing 
+              size={120}
+              strokeWidth={10}
+              value={hydrationPct}
+              label={`${hydrationPct}%`}
+              subtitle="Hydration"
+              gradientColors={['#14B8FF', '#00E5C3']}
+              glowColor="rgba(0, 229, 195, 0.4)"
+              icon={<Droplet size={14} color="#00E5C3" />}
+            />
+          </GlassCard>
+
+          <GlassCard style={styles.ringCard} borderColor={borderThemeColor}>
+            <CircularRing 
+              size={120}
+              strokeWidth={10}
+              value={Math.round(Math.min(100, (hrvValue / 120) * 100))}
+              label={`${hrvValue}`}
+              subtitle="HRV (ms)"
+              gradientColors={['#7C3AED', '#FF4D6D']}
+              glowColor="rgba(255, 77, 109, 0.4)"
+              icon={<Activity size={14} color="#FF4D6D" />}
+            />
+          </GlassCard>
+
+          <GlassCard style={styles.ringCard} borderColor={borderThemeColor}>
+            <CircularRing 
+              size={120}
+              strokeWidth={10}
+              value={Math.round(Math.min(100, (heartRateValue / 180) * 100))}
+              label={`${heartRateValue}`}
+              subtitle="Resting HR"
+              gradientColors={['#FFAD33', '#FF4D6D']}
+              glowColor="rgba(255, 173, 51, 0.4)"
+              icon={<Heart size={14} color="#FFAD33" />}
+            />
+          </GlassCard>
+
+          <GlassCard style={styles.ringCard} borderColor={borderThemeColor}>
+            <CircularRing 
+              size={120}
+              strokeWidth={10}
+              value={recoveryValue}
+              label={`${recoveryValue}%`}
+              subtitle="Recovery"
+              gradientColors={['#00FFB2', '#7C3AED']}
+              glowColor="rgba(0, 255, 178, 0.4)"
+              icon={<Shield size={14} color="#00FFB2" />}
+            />
+          </GlassCard>
+        </View>
+
+        {/* Dynamic 10-Metric Healthtech Grid */}
+        <Text style={[styles.sectionTitle, { color: darkMode ? '#FFFFFF' : '#0F172A', marginTop: 28, marginBottom: 12 }]}>
+          Premium Health Baselines
+        </Text>
+        <View style={styles.metricsGrid}>
+          {renderMetricCard(t('hydrationScore'), `${hydrationPct}%`, 'Fluid level balance', <Droplet size={18} color="#FFFFFF" />, '#14B8FF', 'Optimal')}
+          {renderMetricCard('Heart Rate Variability', `${hrvValue} ms`, 'Vagal system indicator', <Activity size={18} color="#FFFFFF" />, '#7C3AED', '+4.2%')}
+          {renderMetricCard('Resting Heart Rate', `${heartRateValue - 5} bpm`, 'Cardiac efficiency rate', <Heart size={18} color="#FFFFFF" />, '#FF4D6D', 'Stable')}
+          {renderMetricCard(t('sleepScore'), '88%', 'Sleep recovery metric', <Moon size={18} color="#FFFFFF" />, '#8A5CF5', 'Restful')}
+          {renderMetricCard(t('recoveryScore'), `${recoveryValue}%`, 'Ready for workout strain', <Shield size={18} color="#FFFFFF" />, '#00FFB2', 'Optimal')}
+          {renderMetricCard(t('stressIndex'), `${stressIndex}%`, 'Somatic stress level', <Gauge size={18} color="#FFFFFF" />, '#FFAD33', stressIndex > 50 ? 'Moderate' : 'Low')}
+          {renderMetricCard(t('skinTemp'), `${skinTempValue}°C`, 'Sensor physiological baseline', <Thermometer size={18} color="#FFFFFF" />, '#10B981', 'Normal')}
+          {renderMetricCard(t('dailyFluidGoal'), `${currentIntake} / ${dailyWaterTarget} ml`, 'Progress vs absolute goal', <Droplet size={18} color="#FFFFFF" />, '#3B82F6', `${hydrationPct}%`)}
+          {renderMetricCard(t('stoolHealth'), stoolHealth, 'Log summary', <Calendar size={18} color="#FFFFFF" />, '#D97706', 'Gut Feed')}
+          {renderMetricCard(t('diarrheaRisk'), prediction.riskLevel, 'AI risk classification', <AlertTriangle size={18} color="#FFFFFF" />, '#EF4444', 'Computed')}
+        </View>
+
+        {/* Middle split: SVG Line Chart & Quick Log Panel */}
+        <View style={styles.splitGrid}>
+          
+          {/* Chart Section */}
+          <GlassCard style={[styles.splitColCard, { flex: isDesktop ? 7 : undefined }]} borderColor={borderThemeColor}>
+            <View style={styles.chartHeaderRow}>
+              <View>
+                <Text style={[styles.chartHeaderTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Hydration History</Text>
+                <Text style={styles.chartHeaderSub}>Fluid logs trend analysis</Text>
+              </View>
+
+              {/* Timeframe Toggle Buttons */}
+              <View style={styles.chartTogglesBg}>
+                <TouchableOpacity 
+                  style={[styles.chartToggleBtn, hydrationTimeframe === '7 Days' && styles.chartToggleBtnActive]}
+                  onPress={() => setHydrationTimeframe('7 Days')}
+                >
+                  <Text style={[styles.chartToggleText, hydrationTimeframe === '7 Days' && styles.chartToggleTextActive]}>7D</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.chartToggleBtn, hydrationTimeframe === '30 Days' && styles.chartToggleBtnActive]}
+                  onPress={() => setHydrationTimeframe('30 Days')}
+                >
+                  <Text style={[styles.chartToggleText, hydrationTimeframe === '30 Days' && styles.chartToggleTextActive]}>30D</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Custom SVG Line Chart */}
+            <View style={styles.svgContainer}>
+              <Svg width="100%" height="220">
+                <Defs>
+                  <LinearGradient id="chartGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <Stop offset="0%" stopColor="#00E5C3" stopOpacity="0.25" />
+                    <Stop offset="100%" stopColor="#00E5C3" stopOpacity="0.0" />
+                  </LinearGradient>
+                </Defs>
+
+                {/* Y Axis line grids */}
+                <Line x1="40" y1="30" x2="100%" y2="30" stroke={svgLineColor} strokeDasharray="3,3" />
+                <Line x1="40" y1="80" x2="100%" y2="80" stroke={svgLineColor} strokeDasharray="3,3" />
+                <Line x1="40" y1="130" x2="100%" y2="130" stroke={svgLineColor} strokeDasharray="3,3" />
+                <Line x1="40" y1="180" x2="100%" y2="180" stroke={svgLineColor} strokeDasharray="3,3" />
+
+                {/* Axis Labels */}
+                <SvgText x="10" y="34" fill={textSecondary} fontSize="10" fontWeight="600">100</SvgText>
+                <SvgText x="10" y="84" fill={textSecondary} fontSize="10" fontWeight="600">75</SvgText>
+                <SvgText x="10" y="134" fill={textSecondary} fontSize="10" fontWeight="600">50</SvgText>
+                <SvgText x="10" y="184" fill={textSecondary} fontSize="10" fontWeight="600">25</SvgText>
+
+                {/* Simulated Chart Line */}
+                {hydrationTimeframe === '7 Days' ? (
+                  <>
+                    <Path
+                      d="M 50 120 L 100 90 L 150 140 L 200 110 L 250 80 L 300 50 L 350 40 L 400 90 L 450 70 L 500 50"
+                      fill="transparent"
+                      stroke="#00E5C3"
+                      strokeWidth="3.5"
+                    />
+                    <Path
+                      d="M 50 120 L 100 90 L 150 140 L 200 110 L 250 80 L 300 50 L 350 40 L 400 90 L 450 70 L 500 50 L 500 180 L 50 180 Z"
+                      fill="url(#chartGrad)"
+                    />
+                    {/* Nodes */}
+                    <Circle cx="50" cy="120" r="4.5" fill="#050B18" stroke="#00E5C3" strokeWidth="2.5" />
+                    <Circle cx="100" cy="90" r="4.5" fill="#050B18" stroke="#00E5C3" strokeWidth="2.5" />
+                    <Circle cx="200" cy="110" r="4.5" fill="#050B18" stroke="#00E5C3" strokeWidth="2.5" />
+                    <Circle cx="300" cy="50" r="4.5" fill="#050B18" stroke="#00E5C3" strokeWidth="2.5" />
+                    <Circle cx="400" cy="90" r="4.5" fill="#050B18" stroke="#00E5C3" strokeWidth="2.5" />
+                    <Circle cx="500" cy="50" r="4.5" fill="#050B18" stroke="#00E5C3" strokeWidth="2.5" />
+                  </>
+                ) : (
+                  <>
+                    <Path
+                      d="M 50 140 L 80 120 L 110 130 L 140 100 L 170 110 L 200 90 L 230 75 L 260 95 L 290 80 L 320 60 L 350 70 L 380 50 L 410 40 L 440 65 L 470 50 L 500 35 L 530 45 L 560 30"
+                      fill="transparent"
+                      stroke="#00E5C3"
+                      strokeWidth="2.5"
+                    />
+                    <Path
+                      d="M 50 140 L 80 120 L 110 130 L 140 100 L 170 110 L 200 90 L 230 75 L 260 95 L 290 80 L 320 60 L 350 70 L 380 50 L 410 40 L 440 65 L 470 50 L 500 35 L 530 45 L 560 30 L 560 180 L 50 180 Z"
+                      fill="url(#chartGrad)"
+                    />
+                  </>
+                )}
+              </Svg>
+            </View>
+          </GlassCard>
+
+          {/* Quick Actions Panel */}
+          <View style={[styles.splitColCard, { flex: isDesktop ? 5 : undefined, gap: 20 }]}>
+            
+            {/* Quick fluid log */}
+            <GlassCard style={styles.quickLogCard} borderColor={borderThemeColor}>
+              <Text style={[styles.quickLogTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Water Logger</Text>
+              <Text style={styles.quickLogSub}>Add quick fluid logs</Text>
+              
+              <View style={styles.logChipsRow}>
                 {quickLogAmounts.map((amount) => (
-                  <TouchableOpacity
-                    key={amount}
-                    onPress={() => logWater(amount)}
-                    style={[styles.logChip, { backgroundColor: logChipBg, borderColor: logChipBorder }]}
+                  <TouchableOpacity 
+                    key={amount} 
+                    style={styles.logChip}
+                    onPress={() => {
+                      logWater(amount);
+                      addNotification('Fluid Intake Logged', `Added +${amount}ml to daily fluid levels.`, 'success');
+                    }}
                   >
+                    <Droplet size={14} color="#00E5C3" style={{ marginRight: 6 }} />
                     <Text style={styles.logChipText}>+{amount}ml</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
-          </GlassCard>
 
+              <View style={styles.targetProgressRow}>
+                <Text style={styles.progressText}>Goal Progress: {currentIntake} / {dailyWaterTarget} ml</Text>
+              </View>
+            </GlassCard>
+
+            {/* Print PDF report and Notification actions */}
+            <GlassCard style={styles.quickLogCard} borderColor={borderThemeColor}>
+              <Text style={[styles.quickLogTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>{t('quickActions')}</Text>
+              <Text style={styles.quickLogSub}>System triggers</Text>
+              
+              <View style={styles.actionButtonsRow}>
+                <TouchableOpacity style={styles.actionTriggerBtn} onPress={triggerPDFExport}>
+                  <Printer size={16} color="#00E5C3" style={{ marginRight: 8 }} />
+                  <Text style={styles.actionTriggerBtnText}>{t('exportReport')}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.actionTriggerBtn, { borderColor: 'rgba(255, 77, 109, 0.15)' }]} onPress={triggerManualSync}>
+                  <RefreshCw size={14} color="#FF4D6D" style={{ marginRight: 8 }} />
+                  <Text style={[styles.actionTriggerBtnText, { color: '#FF4D6D' }]}>Force Cloud Sync</Text>
+                </TouchableOpacity>
+              </View>
+            </GlassCard>
+
+          </View>
         </View>
 
-        {/* Bottom Section: Overview and Recommendations */}
-        <View style={isDesktop ? styles.analyticsGridDesktop : styles.analyticsGridMobile}>
-          
-          {/* Donut Chart 1: Fluid Balance Overview */}
-          <GlassCard style={isDesktop ? styles.chartCardColumn : styles.chartCardMobile}>
-            <View style={styles.cardHeaderLabelRow}>
-              <Droplet size={14} color="#00E5C3" style={{ marginRight: 8 }} />
-              <Text style={styles.analyticsCardTitle}>Fluid Balance Overview</Text>
-            </View>
-
-            <View style={styles.donutContainerRow}>
-              {/* Donut Draw */}
-              <View style={styles.donutWrapper}>
-                <Svg width={120} height={120}>
-                  {/* Track base */}
-                  <Circle cx={60} cy={60} r={45} stroke={svgTrackColor} strokeWidth={10} fill="transparent" />
-                  {/* Segment 1: Total Intake (70%) */}
-                  {drawDonutSegment(70, 0, '#14B8FF', 120, 10)}
-                  {/* Segment 2: Sweat & Activity (20%) */}
-                  {drawDonutSegment(20, 70, '#FF4D6D', 120, 10)}
-                  {/* Segment 3: Bowel fluid loss (10%) */}
-                  {drawDonutSegment(10, 90, '#FFAD33', 120, 10)}
-                </Svg>
-              </View>
-
-              {/* Legend List */}
-              <View style={styles.donutLegendContainer}>
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#14B8FF' }]} />
-                  <Text style={styles.donutLegendLabel}>Total Intake</Text>
-                  <Text style={styles.donutLegendValue}>{totalIntake} ml</Text>
-                </View>
-
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#FF4D6D' }]} />
-                  <Text style={styles.donutLegendLabel}>Sweat & Loss</Text>
-                  <Text style={styles.donutLegendValue}>{sweatLoss} ml</Text>
-                </View>
-
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#FFAD33' }]} />
-                  <Text style={styles.donutLegendLabel}>Bowel Loss</Text>
-                  <Text style={styles.donutLegendValue}>{bowelLoss} ml</Text>
-                </View>
-
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#00E5C3' }]} />
-                  <Text style={styles.donutLegendLabel}>Net Balance</Text>
-                  <Text style={[styles.donutLegendValue, { color: '#00E5C3' }]}>+{netBalance >= 0 ? netBalance : 0} ml</Text>
-                </View>
-              </View>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.breakdownBtn} 
-              activeOpacity={0.7}
-              onPress={() => setActiveTab('history')}
-            >
-              <Text style={styles.breakdownBtnText}>View Full Breakdown</Text>
-            </TouchableOpacity>
-          </GlassCard>
-
-          {/* Donut Chart 2: Sleep Analysis */}
-          <GlassCard style={isDesktop ? styles.chartCardColumn : styles.chartCardMobile}>
-            <View style={styles.cardHeaderLabelRow}>
-              <Moon size={14} color="#7C3AED" style={{ marginRight: 8 }} />
-              <Text style={styles.analyticsCardTitle}>Sleep Analysis (WHOOP Style)</Text>
-            </View>
-
-            <View style={styles.donutContainerRow}>
-              {/* Donut Draw */}
-              <View style={styles.donutWrapper}>
-                <Svg width={120} height={120}>
-                  {/* Track base */}
-                  <Circle cx={60} cy={60} r={45} stroke={svgTrackColor} strokeWidth={10} fill="transparent" />
-                  {/* Segment 1: Light Sleep (58%) */}
-                  {drawDonutSegment(58, 0, '#14B8FF', 120, 10)}
-                  {/* Segment 2: REM Sleep (20%) */}
-                  {drawDonutSegment(20, 58, '#00E5C3', 120, 10)}
-                  {/* Segment 3: Deep Sleep (22%) */}
-                  {drawDonutSegment(22, 78, '#7C3AED', 120, 10)}
-                </Svg>
-                <View style={styles.donutCenterTextWrapper}>
-                  <Text style={styles.donutCenterValue}>88</Text>
-                  <Text style={styles.donutCenterLabel}>Sleep Score</Text>
-                </View>
-              </View>
-
-              {/* Legend List */}
-              <View style={styles.donutLegendContainer}>
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#7C3AED' }]} />
-                  <Text style={styles.donutLegendLabel}>Total Sleep</Text>
-                  <Text style={styles.donutLegendValue}>7h 42m</Text>
-                </View>
-
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#7C3AED', opacity: 0.6 }]} />
-                  <Text style={styles.donutLegendLabel}>Deep Sleep</Text>
-                  <Text style={styles.donutLegendValue}>1h 42m (22%)</Text>
-                </View>
-
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#00E5C3' }]} />
-                  <Text style={styles.donutLegendLabel}>REM Sleep</Text>
-                  <Text style={styles.donutLegendValue}>1h 36m (20%)</Text>
-                </View>
-
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#14B8FF' }]} />
-                  <Text style={styles.donutLegendLabel}>Light Sleep</Text>
-                  <Text style={styles.donutLegendValue}>4h 24m (58%)</Text>
-                </View>
-
-                <View style={styles.donutLegendItem}>
-                  <View style={[styles.donutDot, { backgroundColor: '#FF4D6D' }]} />
-                  <Text style={styles.donutLegendLabel}>Wake Events</Text>
-                  <Text style={styles.donutLegendValue}>2</Text>
-                </View>
-              </View>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.breakdownBtn} 
-              activeOpacity={0.7}
-              onPress={() => setActiveTab('insights')}
-            >
-              <Text style={styles.breakdownBtnText}>View Sleep Calibration</Text>
-            </TouchableOpacity>
-          </GlassCard>
-
-          {/* Insights & Recommendations */}
-          <GlassCard style={isDesktop ? styles.aiReportColumn : styles.chartCardMobile}>
-            <View style={styles.cardHeaderLabelRow}>
-              <Lightbulb size={14} color="#FFAD33" style={{ marginRight: 8 }} />
-              <Text style={styles.analyticsCardTitle}>Insights & Recommendations</Text>
-            </View>
-
-            <View style={styles.recommendationList}>
-              {/* Rec 1 */}
-              <TouchableOpacity 
-                style={styles.recItem} 
-                activeOpacity={0.7}
-                onPress={() => setActiveTab('history')}
-              >
-                <View style={styles.recLeftRow}>
-                  <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(0, 229, 195, 0.08)' }]}>
-                    <Droplet size={12} color="#00E5C3" fill="#00E5C3" />
-                  </View>
-                  <Text style={styles.recText} numberOfLines={2}>
-                    Great hydration! Keep maintaining your fluid intake.
-                  </Text>
-                </View>
-                <ChevronRight size={12} color={textSecondary} />
-              </TouchableOpacity>
-
-              {/* Rec 2 */}
-              <TouchableOpacity 
-                style={styles.recItem} 
-                activeOpacity={0.7}
-                onPress={() => setActiveTab('insights')}
-              >
-                <View style={styles.recLeftRow}>
-                  <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(20, 184, 255, 0.08)' }]}>
-                    <TrendingUp size={12} color="#14B8FF" />
-                  </View>
-                  <Text style={styles.recText} numberOfLines={2}>
-                    Recovery is trending up. Excellent consistency.
-                  </Text>
-                </View>
-                <ChevronRight size={12} color={textSecondary} />
-              </TouchableOpacity>
-
-              {/* Rec 3 */}
-              <TouchableOpacity 
-                style={styles.recItem} 
-                activeOpacity={0.7}
-                onPress={() => setActiveTab('insights')}
-              >
-                <View style={styles.recLeftRow}>
-                  <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(124, 58, 237, 0.08)' }]}>
-                    <Moon size={12} color="#7C3AED" />
-                  </View>
-                  <Text style={styles.recText} numberOfLines={2}>
-                    Try to reduce late-night screen time for sleep.
-                  </Text>
-                </View>
-                <ChevronRight size={12} color={textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.breakdownBtn} 
-              activeOpacity={0.7}
-              onPress={() => setActiveTab('insights')}
-            >
-              <Text style={styles.breakdownBtnText}>View All Insights</Text>
-            </TouchableOpacity>
-          </GlassCard>
-
-        </View>
+        {/* Activity Timeline section */}
+        <GlassCard style={styles.timelineCard} borderColor={borderThemeColor}>
+          <View style={styles.timelineHeader}>
+            <Activity size={18} color="#00E5C3" style={{ marginRight: 8 }} />
+            <Text style={[styles.timelineHeaderTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>{t('viewTimeline')}</Text>
+          </View>
+          <Timeline />
+        </GlassCard>
 
       </ScrollView>
 
-      {/* High Risk Emergency Console Modal Overlay */}
+      {/* EMERGENCY ACTION MODAL */}
       {showEmergencyModal && (
-        <View style={StyleSheet.absoluteFill} className="bg-black/90 z-50 items-center justify-center p-6">
-          <GlassCard style={styles.modalCard} className="w-full max-w-lg border-[#FF4D6D]/30 bg-[#050B18]/95 p-5">
-            
-            {/* Modal Header */}
-            <View style={styles.modalHeaderRow}>
-              <View style={styles.modalHeaderTitleRow}>
-                <AlertOctagon size={18} color="#FF4D6D" />
-                <Text style={styles.modalTitle}>Emergency Medical Dispatch</Text>
-              </View>
-              <TouchableOpacity 
-                onPress={() => {
-                  setShowEmergencyModal(false);
-                  setEmergencySMSState('idle');
-                }} 
-                style={styles.modalCloseBtn}
-              >
-                <X size={14} color="#FFFFFF" />
+        <View style={styles.modalOverlay}>
+          <GlassCard style={styles.modalBox} borderColor="#FF4D6D">
+            <View style={styles.modalHeader}>
+              <AlertOctagon size={24} color="#FF4D6D" />
+              <Text style={styles.modalTitle}>CRITICAL EMERGENCY BROADCAST</Text>
+              <TouchableOpacity onPress={() => setShowEmergencyModal(false)}>
+                <X size={20} color={darkMode ? '#FFFFFF' : '#050B18'} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
-              <View style={styles.modalWarnBox}>
-                <Text style={styles.warnBoxTitle}>Dehydration Alert Active</Text>
-                <Text style={styles.warnBoxText}>
-                  Wearable telemetry tracks severe gastrointestinal fluid depletion. Deficit is estimated to exceed 1.4 L.
-                </Text>
-              </View>
+            <Text style={styles.modalDesc}>
+              This will dispatch emergency bio-intelligence warnings and active GPS location telemetry to your registered clinic contacts.
+            </Text>
 
-              <Text style={styles.modalSectionLabel}>Active Telemetry Packet</Text>
-              <View style={styles.telemetryGrid}>
-                {[
-                  { label: 'HR', val: `${currentVitals.heartRate} BPM`, color: '#FF4D6D' },
-                  { label: 'HRV', val: `${currentVitals.hrv} ms`, color: '#7C3AED' },
-                  { label: 'Dehydration', val: `${prediction.dehydrationPercent}%`, color: '#FFAD33' },
-                  { label: 'Fluid Deficit', val: '1,450 ml', color: '#14B8FF' }
-                ].map((item, idx) => (
-                  <View key={idx} style={styles.telemetryChip}>
-                    <Text style={styles.telemetryLabel}>{item.label}</Text>
-                    <Text style={[styles.telemetryVal, { color: item.color }]}>{item.val}</Text>
-                  </View>
-                ))}
-              </View>
-
-              <Text style={styles.modalSectionLabel}>Clinical Contacts Queued</Text>
-              <View style={styles.contactsList}>
-                {[
-                  { name: 'Dr. Jane Smith (Primary Clinic)', phone: '+1-555-0199' },
-                  { name: 'Family Emergency Backup', phone: '+1-555-9876' }
-                ].map((c, i) => (
-                  <View key={i} style={styles.contactRow}>
-                    <Text style={styles.contactName}>{c.name}</Text>
-                    <Text style={styles.contactPhone}>{c.phone}</Text>
-                  </View>
-                ))}
-              </View>
-
-              {emergencySMSState === 'idle' ? (
-                <TouchableOpacity
-                  onPress={handleTriggerEmergencySMS}
-                  style={styles.smsButton}
-                >
-                  <Send size={14} color="#FFFFFF" />
-                  <Text style={styles.smsButtonText}>Send Telemetry SMS</Text>
-                </TouchableOpacity>
-              ) : emergencySMSState === 'sending' ? (
-                <View style={[styles.smsButton, { backgroundColor: 'rgba(255, 255, 255, 0.05)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)' }]}>
-                  <Text style={[styles.smsButtonText, { color: '#8E9AA6' }]}>Transmitting Payload...</Text>
-                </View>
-              ) : (
-                <View style={[styles.smsButton, { backgroundColor: 'rgba(0, 255, 178, 0.1)', borderWidth: 1, borderColor: 'rgba(0, 255, 178, 0.2)' }]}>
-                  <Text style={[styles.smsButtonText, { color: '#00FFB2' }]}>Alert Dispatched</Text>
-                </View>
-              )}
-
-              {emergencySMSState === 'sent' && (
-                <View style={styles.consoleLog}>
-                  <Text style={styles.consoleText}>
-                    [SECURE_SMS] Package delivered to Dr. Jane Smith (+1-555-0199).{'\n'}
-                    [METRICS] HR: {currentVitals.heartRate} | HRV: {currentVitals.hrv}ms | Est. Loss: 1450ml.
-                  </Text>
-                </View>
-              )}
-            </ScrollView>
-
+            <TouchableOpacity 
+              style={[
+                styles.emergencyModalTrigger, 
+                emergencySMSState === 'sending' && { backgroundColor: '#FFAD33' },
+                emergencySMSState === 'sent' && { backgroundColor: '#00cc66' }
+              ]} 
+              onPress={handleTriggerEmergencySMS}
+            >
+              <Text style={styles.emergencyModalTriggerText}>
+                {emergencySMSState === 'idle' ? t('emergencyTrigger') : emergencySMSState === 'sending' ? t('emergencySending') : t('emergencySent')}
+              </Text>
+            </TouchableOpacity>
           </GlassCard>
         </View>
       )}
+
     </SafeAreaView>
   );
 };
@@ -889,47 +561,50 @@ const getStyles = (darkMode: boolean) => StyleSheet.create({
     backgroundColor: darkMode ? '#050B18' : '#F8FAFC',
   },
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
+    padding: 24,
+    paddingBottom: 60,
   },
-  
-  // Top Header Section
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 24,
     flexWrap: 'wrap',
+    gap: 16,
     width: '100%',
   },
   greetingText: {
     fontSize: 20,
     fontWeight: '900',
-    letterSpacing: -0.5,
     color: darkMode ? '#FFFFFF' : '#0F172A',
+    letterSpacing: -0.5,
   },
   subtitleText: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 3,
-    color: darkMode ? '#8E9AA6' : '#64748B',
+    fontSize: 13,
+    color: '#8E9AA6',
+    fontWeight: '500',
   },
   headerRightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    gap: 12,
+  },
+  syncBtn: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.03)',
+    borderWidth: 1,
+    borderColor: darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)',
   },
   connectedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 14,
-    marginRight: 12,
+    borderRadius: 20,
     backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.03)',
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
+    borderWidth: 1,
+    borderColor: darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)',
   },
   connectedDot: {
     width: 6,
@@ -940,608 +615,333 @@ const getStyles = (darkMode: boolean) => StyleSheet.create({
   connectedText: {
     fontSize: 10,
     fontWeight: '800',
-    color: darkMode ? '#FFFFFF' : '#0F172A',
+    color: '#8E9AA6',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   bellBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    position: 'relative',
+    padding: 8,
+    borderRadius: 20,
     backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.03)',
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
+    borderWidth: 1,
+    borderColor: darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)',
+    position: 'relative',
   },
-  bellBadge: {
+  bellUnreadDot: {
     position: 'absolute',
-    top: 6,
-    right: 6,
+    top: 2,
+    right: 2,
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#00E5C3',
   },
-  userProfileWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.03)',
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
-  },
-  userAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#1E293B',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  avatarLetter: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  userInfoText: {
-    marginRight: 8,
-  },
-  usernameText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-  },
-  premiumText: {
-    color: '#00E5C3',
-    fontSize: 8,
-    fontWeight: '900',
-    marginTop: 0.5,
-  },
-  dropdownChevron: {
-    marginLeft: 2,
-  },
-
-  // Emergency banner
-  emergencyBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 77, 109, 0.08)',
-    borderColor: 'rgba(255, 77, 109, 0.25)',
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 24,
-  },
-  bannerLeftRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    paddingRight: 10,
-  },
-  bannerTextContainer: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  bannerTitle: {
-    color: '#FF4D6D',
-    fontSize: 11,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  bannerSubtitle: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.7)' : '#FF4D6D',
-    fontSize: 9,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  bannerActionBadge: {
-    backgroundColor: 'rgba(255, 77, 109, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  bannerActionText: {
-    color: '#FF4D6D',
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  
-  // Hero section (4 cards row)
-  heroRowDesktop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  heroGridMobile: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  heroCardDesktop: {
-    flex: 1,
-    marginRight: 12,
-    borderRadius: 20,
-    padding: 14,
-  },
-  heroCardMobile: {
-    width: '48.5%',
-    marginBottom: 12,
-    borderRadius: 20,
-    padding: 14,
-  },
-  heroCardContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  heroCardLeft: {
-    flex: 1,
-    paddingRight: 4,
-  },
-  heroCardTitle: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: darkMode ? '#8E9AA6' : '#475569',
-  },
-  heroCardValue: {
-    fontSize: 22,
-    fontWeight: '900',
-    marginTop: 6,
-    letterSpacing: -0.5,
-  },
-  heroCardStatus: {
-    color: '#00FFB2',
-    fontSize: 9,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  heroCardSubStatus: {
-    fontSize: 9,
-    fontWeight: '800',
-    marginTop: 2,
-    color: darkMode ? '#8E9AA6' : '#64748B',
-  },
-  heroCardTrend: {
-    fontSize: 9,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-  heroCardRight: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
-  },
-
-  // Analytics Layout Grid
-  analyticsGridDesktop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  analyticsGridMobile: {
-    flexDirection: 'column',
-    marginBottom: 10,
-  },
-  chartCardColumn: {
-    width: '37.5%',
-    borderRadius: 24,
-    padding: 20,
-  },
-  aiReportColumn: {
-    width: '22.5%',
-    borderRadius: 24,
-    padding: 20,
-  },
-  chartCardMobile: {
-    width: '100%',
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
-  },
-  
-  // Header with actions inside cards
-  cardHeaderWithAction: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  cardHeaderLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  analyticsCardTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-  },
-  durationSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.03)',
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
-  },
-  durationText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: darkMode ? '#8E9AA6' : '#64748B',
-  },
-  chartViewport: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 10,
-  },
-  chartLegendRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 10,
-    borderTopWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
-    paddingTop: 12,
-  },
-  legendDotBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  legendDotSquare: {
-    width: 8,
-    height: 8,
-    borderRadius: 2,
-    marginRight: 6,
-  },
-  legendLabelText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: darkMode ? '#8E9AA6' : '#64748B',
-  },
-
-  // AI report details
-  confidenceBadge: {
-    backgroundColor: 'rgba(0, 229, 195, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 195, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  confidenceText: {
-    color: '#00E5C3',
-    fontSize: 8,
-    fontWeight: '900',
-  },
-  reportItem: {
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
-    paddingBottom: 8,
-  },
-  reportLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    color: darkMode ? '#8E9AA6' : '#64748B',
-  },
-  reportValue: {
-    fontSize: 15,
-    fontWeight: '900',
-    marginTop: 2,
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-  },
-  reportTextContainer: {
-    borderRadius: 14,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
-    marginBottom: 14,
-  },
-  reportDescText: {
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '600',
-    color: darkMode ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.85)',
-  },
-
-  // Quick logging
-  quickLogWrapper: {
-    borderTopWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
-    paddingTop: 12,
-  },
-  quickLogTitle: {
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-    color: darkMode ? '#8E9AA6' : '#64748B',
-  },
-  logButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  logChip: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 6,
-  },
-  logChipText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-  },
-
-  // Bottom section donuts
-  donutContainerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginVertical: 12,
-  },
-  donutWrapper: {
-    width: 120,
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  donutCenterTextWrapper: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  donutCenterValue: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-  },
-  donutCenterLabel: {
-    fontSize: 8,
-    fontWeight: '700',
-    marginTop: 1,
-    color: darkMode ? '#8E9AA6' : '#64748B',
-  },
-  donutLegendContainer: {
-    flex: 1,
-    marginLeft: 16,
-    justifyContent: 'center',
-  },
-  donutLegendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  donutDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 8,
-  },
-  donutLegendLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    flex: 1,
-    color: darkMode ? '#8E9AA6' : '#64748B',
-  },
-  donutLegendValue: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-  },
-  breakdownBtn: {
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 195, 0.25)',
-    borderRadius: 14,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    backgroundColor: 'transparent',
-  },
-  breakdownBtnText: {
-    color: '#00E5C3',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-
-  // Recommendations
-  recommendationList: {
-    marginVertical: 10,
-    flex: 1,
-    justifyContent: 'center',
-  },
-  recItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 10,
-    marginBottom: 8,
-    backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.03)',
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.08)',
-  },
-  recLeftRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    paddingRight: 8,
-  },
-  recIconWrapper: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  recText: {
-    fontSize: 10,
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 14,
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-  },
-
-  // Modal styling
-  modalCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-  },
-  modalHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    paddingBottom: 10,
-    marginBottom: 12,
-  },
-  modalHeaderTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  modalTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900',
-    marginLeft: 8,
-  },
-  modalCloseBtn: {
-    padding: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 10,
-  },
-  modalScroll: {
-    maxHeight: 400,
-  },
-  modalWarnBox: {
-    backgroundColor: 'rgba(255, 77, 109, 0.1)',
+  profileBtn: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 77, 109, 0.2)',
-    padding: 12,
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: 32,
+    height: 32,
+  },
+  avatarFallback: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#00E5C3',
     alignItems: 'center',
-    marginBottom: 14,
+    justifyContent: 'center',
   },
-  warnBoxTitle: {
-    color: '#FF4D6D',
-    fontSize: 10,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  warnBoxText: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 10,
-    textAlign: 'center',
-    marginTop: 4,
-    lineHeight: 14,
-  },
-  modalSectionLabel: {
-    color: 'rgba(255, 255, 255, 0.4)',
-    fontSize: 9,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  telemetryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  telemetryChip: {
-    width: '48%',
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.04)',
-    padding: 10,
-    marginBottom: 8,
-  },
-  telemetryLabel: {
-    color: 'rgba(255, 255, 255, 0.4)',
-    fontSize: 8,
-    fontWeight: '700',
-  },
-  telemetryVal: {
-    fontSize: 11,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-  contactsList: {
-    marginBottom: 16,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    padding: 10,
-    borderRadius: 12,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.03)',
-  },
-  contactName: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  contactPhone: {
-    color: 'rgba(255, 255, 255, 0.4)',
-    fontSize: 9,
-  },
-  smsButton: {
+  dangerAlertBanner: {
     backgroundColor: '#FF4D6D',
     borderRadius: 16,
-    paddingVertical: 12,
+    padding: 16,
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 24,
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  smsButtonText: {
+  dangerTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  dangerDesc: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
+  },
+  triggerAlertBtn: {
+    backgroundColor: '#050B18',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  triggerAlertText: {
     color: '#FFFFFF',
     fontSize: 10,
-    fontWeight: '900',
+    fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginLeft: 6,
   },
-  consoleLog: {
-    backgroundColor: 'rgba(5, 11, 24, 0.8)',
+  ringsSectionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  ringCard: {
+    flex: 1,
+    minWidth: 140,
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderRadius: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+    marginBottom: 24,
+  },
+  premiumCard: {
+    flex: 1,
+    minWidth: 160,
+    padding: 16,
+    borderRadius: 20,
+    justifyContent: 'flex-start',
+  },
+  metricCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  metricIconBox: {
+    padding: 8,
+    borderRadius: 8,
+  },
+  metricBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 12,
-    padding: 10,
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.04)',
   },
-  consoleText: {
-    color: '#00FFB2',
-    fontSize: 8,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    lineHeight: 12,
+  metricBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  metricValue: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  metricTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    marginBottom: 2,
+  },
+  metricSub: {
+    fontSize: 10,
+    color: '#8E9AA6',
+    fontWeight: '600',
+  },
+  skeletonText: {
+    height: 14,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    width: '100%',
+  },
+  splitGrid: {
+    flexDirection: Platform.OS === 'web' && Dimensions.get('window').width >= 768 ? 'row' : 'column',
+    gap: 24,
+    marginBottom: 24,
+  },
+  splitColCard: {
+    padding: 24,
+    borderRadius: 24,
+  },
+  chartHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  chartHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  chartHeaderSub: {
+    fontSize: 11,
+    color: '#8E9AA6',
+    fontWeight: '600',
+  },
+  chartTogglesBg: {
+    flexDirection: 'row',
+    borderRadius: 20,
+    padding: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  chartToggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 18,
+  },
+  chartToggleBtnActive: {
+    backgroundColor: '#00E5C3',
+  },
+  chartToggleText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#8E9AA6',
+  },
+  chartToggleTextActive: {
+    color: '#050B18',
+  },
+  svgContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  quickLogCard: {
+    padding: 20,
+    borderRadius: 20,
+    width: '100%',
+  },
+  quickLogTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+  },
+  quickLogSub: {
+    fontSize: 11,
+    color: '#8E9AA6',
+    fontWeight: '600',
+    marginBottom: 14,
+  },
+  logChipsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  logChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 229, 195, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 195, 0.15)',
+  },
+  logChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#00E5C3',
+  },
+  targetProgressRow: {
+    width: '100%',
+  },
+  progressText: {
+    fontSize: 11,
+    color: '#8E9AA6',
+    fontWeight: '700',
+  },
+  actionButtonsRow: {
+    flexDirection: 'column',
+    gap: 10,
+  },
+  actionTriggerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 195, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.01)',
+  },
+  actionTriggerBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#00E5C3',
+  },
+  timelineCard: {
+    padding: 24,
+    borderRadius: 24,
+  },
+  timelineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  timelineHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    zIndex: 99999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalBox: {
+    width: '100%',
+    maxWidth: 450,
+    padding: 24,
+    borderRadius: 24,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#FF4D6D',
+    flex: 1,
+    textAlign: 'center',
+  },
+  modalDesc: {
+    fontSize: 12,
+    color: '#8E9AA6',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+    fontWeight: '500',
+  },
+  emergencyModalTrigger: {
+    width: '100%',
+    backgroundColor: '#FF4D6D',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#FF4D6D',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  emergencyModalTriggerText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 12,
+    letterSpacing: 0.5,
   },
 });

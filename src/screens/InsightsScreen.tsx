@@ -1,11 +1,12 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVitalsStore } from '../store/useVitalsStore';
 import { useWaterStore } from '../store/useWaterStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { GlassCard } from '../components/GlassCard';
+import { useTranslation } from '../store/i18n';
 import { 
   Sparkles, 
   Brain, 
@@ -15,49 +16,109 @@ import {
   AlertTriangle,
   Zap,
   Moon,
-  Clock
+  Clock,
+  Send,
+  User,
+  Heart
 } from 'lucide-react-native';
-import Svg, { Circle, G, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, G, Text as SvgText, Path, Defs, LinearGradient, Stop, Line } from 'react-native-svg';
+
+interface MessageItem {
+  sender: 'user' | 'coach';
+  text: string;
+  timestamp: Date;
+}
 
 export const InsightsScreen: React.FC = () => {
   const { prediction, currentVitals } = useVitalsStore();
   const { currentIntake, dailyWaterTarget } = useWaterStore();
-  const { logs, recoveryScore } = useDiarrheaStore();
+  const { logs: diarrheaLogs, recoveryScore } = useDiarrheaStore();
 
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t } = useTranslation();
   const styles = getStyles(darkMode);
 
-  const totalLogsToday = logs.filter(log => {
-    const hours = (new Date().getTime() - new Date(log.timestamp).getTime()) / (1000 * 60 * 60);
-    return hours < 24;
-  });
+  const [chatInput, setChatInput] = useState('');
+  const [messages, setMessages] = useState<MessageItem[]>([
+    {
+      sender: 'coach',
+      text: "Hello! I am your Hydrax AI Coach. I analyze your optical band vitals, fluid intake logs, and bowel recovery trends in real-time. How can I help optimize your bio-metrics today?",
+      timestamp: new Date()
+    }
+  ]);
+  const [isTyping, setIsTyping] = useState(false);
 
-  const totalFluidLoss = totalLogsToday.reduce((sum, log) => sum + log.fluidLossEstimate, 0);
+  // Quick Chat Prompts
+  const quickPrompts = [
+    "Why is my recovery score low?",
+    "Suggest daily hydration plan",
+    "How does my gut affect HRV?"
+  ];
+
+  const getCoachResponse = (query: string): string => {
+    const q = query.toLowerCase();
+    const hydrationPct = Math.round((currentIntake / dailyWaterTarget) * 100);
+    const stressVal = Math.round(100 - (currentVitals.hrv * 1.2) + (currentVitals.heartRate - 70));
+
+    if (q.includes('recovery')) {
+      return `Your Digestive Recovery Score is currently at ${recoveryScore}%. This is evaluated based on your logged Bristol stool symptoms (${diarrheaLogs.length} entries). To elevate your recovery score, focus on keeping your fluid intake high (+350ml logged) and eating soluble fibers. Your HRV of ${currentVitals.hrv}ms indicates minor vagal strain.`;
+    }
+    if (q.includes('hydration') || q.includes('water') || q.includes('plan')) {
+      return `Your current fluid intake is ${currentIntake}ml (progressing towards your ${dailyWaterTarget}ml goal). I predict a hydration decline of 14% over the next 4 hours due to an active skin temp baseline of ${currentVitals.skinTemp}°C. I advise consuming 250ml water immediately, followed by 350ml in 2 hours to avoid dehydration strain.`;
+    }
+    if (q.includes('hrv') || q.includes('gut') || q.includes('heart')) {
+      return `There is a direct correlation between gut inflammation and heart rate variability (HRV). Your resting heart rate of ${currentVitals.heartRate} bpm combined with your HRV of ${currentVitals.hrv}ms shows that your body is compensating for bowel stress. Hydration will reduce your core stress index (currently ${stressVal}%) and normalize your vagus nerve activity.`;
+    }
+    return `Based on your bio-metrics (HRV: ${currentVitals.hrv}ms, Temp: ${currentVitals.skinTemp}°C, Gut score: ${recoveryScore}%), your overall physiological risk remains ${prediction.riskLevel}. Continue logging fluid inputs and avoid intense exercises until your vitals stabilize. Let me know if you want detailed notes on stress or sleep!`;
+  };
+
+  const handleSendChat = (text: string) => {
+    if (!text.trim()) return;
+
+    const userMsg: MessageItem = {
+      sender: 'user',
+      text,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setIsTyping(true);
+
+    setTimeout(() => {
+      const coachText = getCoachResponse(text);
+      const coachMsg: MessageItem = {
+        sender: 'coach',
+        text: coachText,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, coachMsg]);
+      setIsTyping(false);
+    }, 1200);
+  };
 
   // Compute breakdown percentages for a custom SVG fluid balance chart
   const baseMetabolic = 1200;
-  const sweatActivityLoss = Math.round(currentVitals.motion * 800);
+  const sweatActivityLoss = Math.round(currentVitals.motion * 800) || 800;
+  const totalFluidLoss = diarrheaLogs.reduce((sum, log) => sum + log.fluidLossEstimate, 0);
   const totalDepletion = baseMetabolic + sweatActivityLoss + totalFluidLoss;
-
   const intakePercentage = Math.round(Math.min(100, (currentIntake / (totalDepletion || 1)) * 100));
+  const netBalance = currentIntake - totalDepletion;
 
-  // Renders a custom SVG fluid distribution Donut chart
+  // Fluid Distribution Donut segments
   const renderFluidDistribution = () => {
     const size = 160;
     const strokeWidth = 14;
     const r = (size - strokeWidth) / 2;
     const circ = 2 * Math.PI * r;
 
-    // Split segments
     const metShare = 0.45;
     const sweatShare = 0.25;
     const diarrheaShare = totalFluidLoss > 0 ? 0.30 : 0.0;
     
-    // Normalize shares to sum to 1
     const totalShare = metShare + sweatShare + diarrheaShare;
     const metPct = (metShare / totalShare) * circ;
     const sweatPct = (sweatShare / totalShare) * circ;
-    const diarrheaPct = (diarrheaShare / totalShare) * circ;
 
     return (
       <View style={{ alignItems: 'center', paddingVertical: 8, justifyContent: 'center' }}>
@@ -77,7 +138,6 @@ export const InsightsScreen: React.FC = () => {
             </LinearGradient>
           </Defs>
           <G transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-            {/* Metabolic Segment */}
             <Circle
               cx={size / 2}
               cy={size / 2}
@@ -88,7 +148,6 @@ export const InsightsScreen: React.FC = () => {
               strokeDashoffset={0}
               fill="transparent"
             />
-            {/* Sweat Segment */}
             <Circle
               cx={size / 2}
               cy={size / 2}
@@ -99,7 +158,6 @@ export const InsightsScreen: React.FC = () => {
               strokeDashoffset={metPct}
               fill="transparent"
             />
-            {/* Diarrhea Segment */}
             {totalFluidLoss > 0 && (
               <Circle
                 cx={size / 2}
@@ -114,13 +172,11 @@ export const InsightsScreen: React.FC = () => {
             )}
           </G>
         </Svg>
-        <View style={styles.donutTextContainer}>
-          <Text style={styles.donutTextVal}>{intakePercentage}%</Text>
-          <Text style={styles.donutTextSub}>Met Daily</Text>
-        </View>
       </View>
     );
   };
+
+  const isDesktop = Dimensions.get('window').width >= 768;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -128,200 +184,221 @@ export const InsightsScreen: React.FC = () => {
         
         {/* Title */}
         <View style={{ marginBottom: 24 }}>
-          <Text style={styles.bannerSubtitle}>AI Core Insights</Text>
-          <Text style={styles.bannerTitle}>Dehydration & Risks</Text>
+          <Text style={styles.bannerSubtitle}>{t('aiInsights')}</Text>
+          <Text style={styles.bannerTitle}>Physiological Analytics</Text>
         </View>
 
-        {/* AI Prediction Board */}
-        <GlassCard style={styles.predictionCard} borderColor={darkMode ? 'rgba(0, 229, 195, 0.1)' : 'rgba(0, 229, 195, 0.15)'}>
-          <View style={styles.predictionHeader}>
-            <View style={styles.predictionTitleRow}>
-              <Brain size={18} color="#00E5C3" />
-              <Text style={styles.cardHeaderTitle}>AI Status Report</Text>
-            </View>
-            <View style={styles.confidenceBadge}>
-              <Text style={styles.confidenceText}>CONFIDENCE: {prediction.confidenceScore}%</Text>
-            </View>
+        {/* Two Column Grid */}
+        <View style={[styles.splitGrid, { flexDirection: isDesktop ? 'row' : 'column' }]}>
+          
+          {/* COLUMN 1: AI Coach Chat Box */}
+          <View style={{ flex: isDesktop ? 7 : undefined, gap: 24 }}>
+            <GlassCard style={styles.coachCard} borderColor={darkMode ? 'rgba(124, 92, 245, 0.1)' : 'rgba(124, 92, 245, 0.15)'}>
+              <View style={styles.coachHeader}>
+                <View style={styles.coachAvatar}>
+                  <Brain size={20} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={[styles.coachTitleText, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>{t('aiCoachTitle')}</Text>
+                  <Text style={styles.coachSubText}>Active Real-time Biological Advisor</Text>
+                </View>
+              </View>
+
+              {/* Message scroll area */}
+              <ScrollView style={styles.chatScrollView} contentContainerStyle={styles.chatScrollContent} showsVerticalScrollIndicator={false}>
+                {messages.map((msg, idx) => (
+                  <View 
+                    key={idx} 
+                    style={[
+                      styles.chatBubbleContainer, 
+                      msg.sender === 'user' ? styles.userBubbleAlign : styles.coachBubbleAlign
+                    ]}
+                  >
+                    <View style={[
+                      styles.chatBubble, 
+                      msg.sender === 'user' 
+                        ? { backgroundColor: '#00E5C3', borderBottomRightRadius: 2 } 
+                        : { backgroundColor: darkMode ? '#111A36' : '#F1F5F9', borderBottomLeftRadius: 2 }
+                    ]}>
+                      <Text style={[
+                        styles.chatBubbleText, 
+                        { color: msg.sender === 'user' ? '#050B18' : (darkMode ? '#FFFFFF' : '#0F172A') }
+                      ]}>
+                        {msg.text}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+                {isTyping && (
+                  <View style={[styles.chatBubbleContainer, styles.coachBubbleAlign]}>
+                    <View style={[styles.chatBubble, { backgroundColor: darkMode ? '#111A36' : '#F1F5F9', paddingVertical: 10 }]}>
+                      <ActivityIndicator size="small" color="#00E5C3" />
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
+
+              {/* Chat Prompts */}
+              <View style={styles.quickPromptsRow}>
+                {quickPrompts.map((p, idx) => (
+                  <TouchableOpacity 
+                    key={idx} 
+                    style={[styles.quickPromptChip, { backgroundColor: darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }]} 
+                    onPress={() => handleSendChat(p)}
+                  >
+                    <Text style={styles.quickPromptText}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Chat Input row */}
+              <View style={styles.chatInputRow}>
+                <TextInput 
+                  style={[styles.chatInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                  placeholder={t('askCoachPlaceholder')}
+                  placeholderTextColor="#64748B"
+                  value={chatInput}
+                  onChangeText={setChatInput}
+                />
+                <TouchableOpacity 
+                  style={styles.chatSendBtn}
+                  onPress={() => handleSendChat(chatInput)}
+                >
+                  <Send size={14} color="#050B18" strokeWidth={2.5} />
+                </TouchableOpacity>
+              </View>
+            </GlassCard>
+
+            {/* 8-Hour Hydration Prediction projection graph */}
+            <GlassCard style={styles.coachCard}>
+              <View style={styles.chartHeader}>
+                <Clock size={16} color="#00E5C3" style={{ marginRight: 8 }} />
+                <View>
+                  <Text style={[styles.chartTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>8-Hour Hydration Prediction Projections</Text>
+                  <Text style={styles.chartSub}>Mathematical simulation based on active sweat burn rate</Text>
+                </View>
+              </View>
+
+              {/* SVG curve */}
+              <View style={styles.svgContainer}>
+                <Svg width="100%" height="180">
+                  <Defs>
+                    <LinearGradient id="predGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <Stop offset="0%" stopColor="#14B8FF" stopOpacity="0.2" />
+                      <Stop offset="100%" stopColor="#14B8FF" stopOpacity="0.0" />
+                    </LinearGradient>
+                  </Defs>
+                  
+                  {/* Grid Lines */}
+                  <Line x1="40" y1="20" x2="100%" y2="20" stroke={darkMode ? 'rgba(255,255,255,0.03)' : '#E2E8F0'} strokeDasharray="3,3" />
+                  <Line x1="40" y1="70" x2="100%" y2="70" stroke={darkMode ? 'rgba(255,255,255,0.03)' : '#E2E8F0'} strokeDasharray="3,3" />
+                  <Line x1="40" y1="120" x2="100%" y2="120" stroke={darkMode ? 'rgba(255,255,255,0.03)' : '#E2E8F0'} strokeDasharray="3,3" />
+
+                  {/* Y Axis Labels */}
+                  <SvgText x="10" y="24" fill="#8E9AA6" fontSize="9" fontWeight="600">100%</SvgText>
+                  <SvgText x="10" y="74" fill="#8E9AA6" fontSize="9" fontWeight="600">80%</SvgText>
+                  <SvgText x="10" y="124" fill="#8E9AA6" fontSize="9" fontWeight="600">60%</SvgText>
+
+                  {/* Curve path */}
+                  <Path 
+                    d="M 50 40 C 150 50, 250 110, 350 90 C 450 70, 550 50, 580 45"
+                    fill="transparent"
+                    stroke="#14B8FF"
+                    strokeWidth="3.5"
+                  />
+                  <Path 
+                    d="M 50 40 C 150 50, 250 110, 350 90 C 450 70, 550 50, 580 45 L 580 150 L 50 150 Z"
+                    fill="url(#predGrad)"
+                  />
+
+                  {/* Node indicators */}
+                  <Circle cx="50" cy="40" r="4.5" fill="#050B18" stroke="#14B8FF" strokeWidth="2.5" />
+                  <Circle cx="250" cy="110" r="4.5" fill="#050B18" stroke="#FFAD33" strokeWidth="2.5" />
+                  <Circle cx="580" cy="45" r="4.5" fill="#050B18" stroke="#00E5C3" strokeWidth="2.5" />
+
+                  <SvgText x="50" y="145" fill="#8E9AA6" fontSize="8" fontWeight="700">12:00 (Now)</SvgText>
+                  <SvgText x="230" y="145" fill="#8E9AA6" fontSize="8" fontWeight="700">16:00 (Min)</SvgText>
+                  <SvgText x="530" y="145" fill="#8E9AA6" fontSize="8" fontWeight="700">20:00 (Target)</SvgText>
+                </Svg>
+              </View>
+            </GlassCard>
+
           </View>
 
-          {/* Risk assessment grid */}
-          <View style={styles.riskGrid}>
-            <View style={{ width: '48%' }}>
-              <Text style={styles.riskGridLabel}>Dehydration Risk</Text>
-              <Text 
-                style={[
-                  styles.riskGridVal,
-                  { 
-                    color: prediction.riskLevel === 'Low' ? '#00FFB2' : prediction.riskLevel === 'Medium' ? '#FFAD33' : '#FF4D6D' 
-                  }
-                ]}
-              >
-                {prediction.riskLevel} Risk
-              </Text>
-            </View>
-
-            <View style={{ width: '48%' }}>
-              <Text style={styles.riskGridLabel}>Current Deficit</Text>
-              <Text style={styles.riskGridVal}>
-                {Math.max(0, totalDepletion - currentIntake)} ml
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.reportBorderLine}>
-            <Text style={styles.reportDescText}>
-              {prediction.riskLevel === 'High' 
-                ? 'CRITICAL ALERT: Continuous fluid depletion detected due to gastrointestinal loss. Immediate electrolyte intervention is required.'
-                : prediction.riskLevel === 'Medium'
-                ? 'ALERT: Your hydration levels are lagging due to elevated heart rate and activity. Consider drinking 300ml of mineral water.'
-                : 'OPTIMAL: Hydration level is fully aligned with metabolic consumption. Maintain regular sipping intervals.'
-              }
-            </Text>
-          </View>
-        </GlassCard>
-
-        {/* Fluid distribution chart */}
-        <GlassCard style={{ padding: 20, marginBottom: 20 }} borderColor={borderTheme(darkMode)}>
-          <Text style={styles.cardHeaderTitle}>Total Fluid Depletion Breakdown</Text>
-          <View style={styles.donutRow}>
+          {/* COLUMN 2: Physiological Correlation Donut & AI recommendations */}
+          <View style={{ flex: isDesktop ? 5 : undefined, gap: 24 }}>
             
-            {/* Left: Legend */}
-            <View style={styles.legendContainer}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#14B8FF' }]} />
-                <View>
-                  <Text style={styles.legendLabelBold}>Metabolic Basal</Text>
-                  <Text style={styles.legendLabelSmall}>{baseMetabolic} ml / day</Text>
-                </View>
-              </View>
-
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#FFAD33' }]} />
-                <View>
-                  <Text style={styles.legendLabelBold}>Sweat & Activity</Text>
-                  <Text style={styles.legendLabelSmall}>{sweatActivityLoss} ml estimated</Text>
-                </View>
-              </View>
-
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#FF4D6D' }]} />
-                <View>
-                  <Text style={styles.legendLabelBold}>Bowel Fluid Loss</Text>
-                  <Text style={styles.legendLabelSmall}>{totalFluidLoss} ml today</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Right: Chart */}
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            {/* Fluid Depletion Donut card */}
+            <GlassCard style={styles.fluidCard}>
+              <Text style={[styles.cardTitleText, { color: darkMode ? '#FFFFFF' : '#0F172A', marginBottom: 12 }]}>
+                Body Fluid Depletion Breakdown
+              </Text>
+              
               {renderFluidDistribution()}
-            </View>
 
-          </View>
-        </GlassCard>
-
-        {/* Sleep Stages Analysis Card */}
-        <GlassCard style={{ padding: 20, marginBottom: 20 }} borderColor={borderTheme(darkMode)}>
-          <View style={styles.sleepCardHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Moon size={18} color="#7C3AED" />
-              <Text style={styles.cardHeaderTitle}>WHOOP Style Sleep Analysis</Text>
-            </View>
-            <View style={styles.sleepScoreBadge}>
-              <Text style={styles.sleepScoreBadgeText}>Sleep Score: 88</Text>
-            </View>
-          </View>
-
-          {/* Stacked bar */}
-          <View style={styles.sleepStackedBarTrack}>
-            <View style={{ width: '22%' }} className="h-full bg-[#7C3AED]" /> 
-            <View style={{ width: '25%' }} className="h-full bg-[#00E5C3]" /> 
-            <View style={{ width: '45%' }} className="h-full bg-[#14B8FF]" /> 
-            <View style={{ width: '8%' }} className="h-full bg-[#FF4D6D]" />  
-          </View>
-
-          {/* Legend Grid */}
-          <View style={styles.sleepLegendGrid}>
-            {[
-              { label: 'Deep Sleep', val: '1h 42m', pct: '22%', color: '#7C3AED' },
-              { label: 'REM Sleep', val: '1h 56m', pct: '25%', color: '#00E5C3' },
-              { label: 'Light Sleep', val: '3h 29m', pct: '45%', color: '#14B8FF' },
-              { label: 'Time Awake', val: '38m', pct: '8%', color: '#FF4D6D' }
-            ].map((stg, idx) => (
-              <View key={idx} style={styles.sleepGridItem}>
-                <View style={[styles.sleepColorBox, { backgroundColor: stg.color }]} />
-                <View>
-                  <Text style={styles.sleepGridLabelBold}>{stg.label}</Text>
-                  <Text style={styles.sleepGridLabelSmall}>{stg.val} ({stg.pct})</Text>
+              <View style={styles.donutMetaRow}>
+                <View style={styles.donutLegItem}>
+                  <View style={[styles.donutLegDot, { backgroundColor: '#14B8FF' }]} />
+                  <Text style={styles.donutLegText}>Basal (1200ml)</Text>
                 </View>
+                <View style={styles.donutLegItem}>
+                  <View style={[styles.donutLegDot, { backgroundColor: '#FFAD33' }]} />
+                  <Text style={styles.donutLegText}>Active ({sweatActivityLoss}ml)</Text>
+                </View>
+                {totalFluidLoss > 0 && (
+                  <View style={styles.donutLegItem}>
+                    <View style={[styles.donutLegDot, { backgroundColor: '#FF4D6D' }]} />
+                    <Text style={styles.donutLegText}>Symptoms ({totalFluidLoss}ml)</Text>
+                  </View>
+                )}
               </View>
-            ))}
-          </View>
 
-          {/* Efficiency details */}
-          <View style={styles.sleepFootDetails}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Clock size={14} color={darkMode ? '#8E9AA6' : '#64748B'} />
-              <View style={{ marginLeft: 8 }}>
-                <Text style={styles.smallFooterTitle}>Restless Time</Text>
-                <Text style={styles.boldFooterVal}>42 minutes</Text>
+              <View style={styles.depletionSummaryRow}>
+                <Text style={styles.depletionSummaryText}>
+                  Total daily loss: <Text style={{ color: '#FF4D6D', fontWeight: '800' }}>{totalDepletion} ml</Text> | Net Hydration Balance: <Text style={{ color: netBalance >= 0 ? '#00cc66' : '#FFAD33', fontWeight: '800' }}>{netBalance} ml</Text>
+                </Text>
               </View>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <TrendingUp size={14} color="#00FFB2" />
-              <View style={{ marginLeft: 8 }}>
-                <Text style={styles.smallFooterTitle}>Sleep Efficiency</Text>
-                <Text style={[styles.boldFooterVal, { color: '#00FFB2' }]}>89.4%</Text>
-              </View>
-            </View>
-          </View>
-        </GlassCard>
+            </GlassCard>
 
-        {/* AI Correlation Insights */}
-        <View style={{ marginBottom: 32 }}>
-          <Text style={styles.sectionHeaderTitle}>AI Health Correlations</Text>
+            {/* AI Diagnostics recommendations */}
+            <GlassCard style={styles.fluidCard}>
+              <Text style={[styles.cardTitleText, { color: darkMode ? '#FFFFFF' : '#0F172A', marginBottom: 12 }]}>
+                AI Diagnostics & Correlations
+              </Text>
 
-          {/* Diarrhea fluid correlation */}
-          {totalFluidLoss > 0 && (
-            <GlassCard style={styles.warningCorrelationCard} borderColor="rgba(255, 77, 109, 0.2)">
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                <AlertTriangle size={18} color="#FF4D6D" />
-                <View style={{ marginLeft: 12, flex: 1 }}>
-                  <Text style={styles.warningCorrelationTitle}>Primary Depletion Factor: GI Loss</Text>
-                  <Text style={styles.warningCorrelationText}>
-                    A total of {totalFluidLoss}ml has been lost in bowel events today. Dehydration risk multiplier is elevated by 2.4x.
+              <View style={styles.recomItem}>
+                <Zap size={18} color="#FFAD33" style={{ marginRight: 12 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.recomTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Core Stress Correlation</Text>
+                  <Text style={styles.recomDesc}>
+                    Low HRV ({currentVitals.hrv}ms) is correlating with high stool loss volume. Avoid intensive stress and hydrate with electrolyte solution.
                   </Text>
                 </View>
               </View>
+
+              <View style={styles.recomItem}>
+                <Moon size={18} color="#7C3AED" style={{ marginRight: 12 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.recomTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Sleep Efficiency</Text>
+                  <Text style={styles.recomDesc}>
+                    Your recovery score is projected to recover to 92% if you sleep with fluid levels above 90% (drink 350ml fluid 45m before sleeping).
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.recomItem}>
+                <AlertTriangle size={18} color="#FF4D6D" style={{ marginRight: 12 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.recomTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Bowel Dehydration Risk</Text>
+                  <Text style={styles.recomDesc}>
+                    Current symptom history logged indicates dehydration. Risk level is {prediction.riskLevel} with confidence {prediction.confidenceScore}%.
+                  </Text>
+                </View>
+              </View>
+
             </GlassCard>
-          )}
 
-          {/* Motion/Sweat correlation */}
-          <GlassCard style={styles.correlationCard} borderColor={borderTheme(darkMode)}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <Activity size={18} color="#00E5C3" />
-              <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={styles.correlationTitle}>Sweat Rate vs Sensor Motion</Text>
-                <Text style={styles.correlationText}>
-                  Your motion levels averages {currentVitals.motion.toFixed(2)} Gs. This requires a 10% increase in basal hydration replenishment intervals.
-                </Text>
-              </View>
-            </View>
-          </GlassCard>
-
-          {/* HRV & Stress correlation */}
-          <GlassCard style={styles.correlationCard} borderColor={borderTheme(darkMode)}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <Zap size={18} color="#7C3AED" />
-              <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={styles.correlationTitle}>HRV vs Fluid Status</Text>
-                <Text style={styles.correlationText}>
-                  Low cellular hydration decreases blood volume. A {currentVitals.hrv < 60 ? 'depressed' : 'stable'} HRV reading of {currentVitals.hrv}ms is currently monitored.
-                </Text>
-              </View>
-            </View>
-          </GlassCard>
-
+          </View>
         </View>
 
       </ScrollView>
@@ -335,265 +412,207 @@ const getStyles = (darkMode: boolean) => StyleSheet.create({
     backgroundColor: darkMode ? '#050B18' : '#F8FAFC',
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 40,
-  },
-  bannerTitle: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 24,
-    fontWeight: '900',
-    marginTop: 2,
+    padding: 24,
+    paddingBottom: 60,
   },
   bannerSubtitle: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B',
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#00E5C3',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+    marginBottom: 4,
   },
-
-  // AI Prediction Card
-  predictionCard: {
+  bannerTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: darkMode ? '#FFFFFF' : '#0F172A',
+    letterSpacing: -1,
+  },
+  splitGrid: {
+    gap: 24,
+  },
+  coachCard: {
+    padding: 24,
     borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
   },
-  predictionHeader: {
+  coachHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    paddingBottom: 12,
+  },
+  coachAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  coachTitleText: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  coachSubText: {
+    fontSize: 11,
+    color: '#8E9AA6',
+    fontWeight: '600',
+  },
+  chatScrollView: {
+    height: 280,
+    marginBottom: 12,
+  },
+  chatScrollContent: {
+    gap: 12,
+  },
+  chatBubbleContainer: {
+    flexDirection: 'row',
+    width: '100%',
+  },
+  userBubbleAlign: {
+    justifyContent: 'flex-end',
+  },
+  coachBubbleAlign: {
+    justifyContent: 'flex-start',
+  },
+  chatBubble: {
+    maxWidth: '85%',
+    padding: 12,
+    borderRadius: 12,
+  },
+  chatBubbleText: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  quickPromptsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  quickPromptChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
+  },
+  quickPromptText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#00E5C3',
+  },
+  chatInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  chatInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  chatSendBtn: {
+    backgroundColor: '#00E5C3',
+    padding: 10,
+    borderRadius: 12,
+  },
+  chartHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
   },
-  predictionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cardHeaderTitle: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 13,
+  chartTitle: {
+    fontSize: 14,
     fontWeight: '900',
-    marginLeft: 8,
+    letterSpacing: -0.2,
   },
-  confidenceBadge: {
-    backgroundColor: 'rgba(0, 229, 195, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 195, 0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  confidenceText: {
-    color: '#00E5C3',
-    fontSize: 8,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  riskGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  riskGridLabel: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.5)' : '#64748B',
-    fontSize: 9,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  riskGridVal: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 16,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-  reportBorderLine: {
-    borderTopWidth: 1,
-    borderColor: darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.08)',
-    marginTop: 12,
-    paddingTop: 12,
-  },
-  reportDescText: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.85)' : '#1E293B',
+  chartSub: {
     fontSize: 11,
-    lineHeight: 16,
+    color: '#8E9AA6',
     fontWeight: '600',
   },
-
-  // Donut Layout
-  donutRow: {
-    flexDirection: 'row',
+  svgContainer: {
+    width: '100%',
     alignItems: 'center',
-    marginTop: 16,
   },
-  donutTextContainer: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
+  fluidCard: {
+    padding: 20,
+    borderRadius: 20,
   },
-  donutTextVal: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 20,
+  cardTitleText: {
+    fontSize: 14,
     fontWeight: '900',
+    letterSpacing: -0.2,
   },
-  donutTextSub: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B',
-    fontSize: 8,
-    fontWeight: '700',
-    textTransform: 'uppercase',
+  donutMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    flexWrap: 'wrap',
+    marginTop: 12,
   },
-  legendContainer: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  legendItem: {
+  donutLegItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  legendDot: {
+  donutLegDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginRight: 10,
+    marginRight: 6,
   },
-  legendLabelBold: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 11,
+  donutLegText: {
+    fontSize: 10,
     fontWeight: '800',
+    color: '#8E9AA6',
+    textTransform: 'uppercase',
   },
-  legendLabelSmall: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B',
-    fontSize: 8,
+  depletionSummaryRow: {
+    marginTop: 16,
+    alignItems: 'center',
+    width: '100%',
+    borderTopWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    paddingTop: 12,
+  },
+  depletionSummaryText: {
+    fontSize: 11,
+    color: '#8E9AA6',
     fontWeight: '700',
-    marginTop: 1,
   },
-
-  // Sleep card analysis
-  sleepCardHeader: {
+  recomItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  sleepScoreBadge: {
-    backgroundColor: 'rgba(124, 58, 237, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  sleepScoreBadgeText: {
-    color: '#7C3AED',
-    fontSize: 8,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  sleepStackedBarTrack: {
-    flexDirection: 'row',
-    height: 12,
-    borderRadius: 6,
-    overflow: 'hidden',
-    marginBottom: 16,
-    borderWidth: 0.5,
-    borderColor: borderTheme(darkMode),
-  },
-  sleepLegendGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderColor: borderTheme(darkMode),
-    paddingBottom: 4,
+    borderColor: 'rgba(255,255,255,0.04)',
   },
-  sleepGridItem: {
-    width: '48%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sleepColorBox: {
-    width: 8,
-    height: 8,
-    borderRadius: 2,
-    marginRight: 8,
-  },
-  sleepGridLabelBold: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 10,
+  recomTitle: {
+    fontSize: 12,
     fontWeight: '800',
+    letterSpacing: -0.2,
+    marginBottom: 2,
   },
-  sleepGridLabelSmall: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B',
-    fontSize: 8,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  sleepFootDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  smallFooterTitle: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.4)' : '#64748B',
-    fontSize: 7,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  boldFooterVal: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
+  recomDesc: {
     fontSize: 11,
-    fontWeight: '900',
-    marginTop: 1,
-  },
-
-  // AI correlations
-  sectionHeaderTitle: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.5)' : '#64748B',
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-    marginLeft: 2,
-  },
-  warningCorrelationCard: {
-    padding: 14,
-    borderRadius: 20,
-    marginBottom: 10,
-    backgroundColor: 'rgba(255, 77, 109, 0.05)',
-  },
-  warningCorrelationTitle: {
-    color: '#FF4D6D',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  warningCorrelationText: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.7)' : '#334155',
-    fontSize: 10,
-    marginTop: 4,
-    lineHeight: 14,
-    fontWeight: '600',
-  },
-  correlationCard: {
-    padding: 14,
-    borderRadius: 20,
-    marginBottom: 10,
-  },
-  correlationTitle: {
-    color: darkMode ? '#FFFFFF' : '#0F172A',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  correlationText: {
-    color: darkMode ? 'rgba(255, 255, 255, 0.65)' : '#334155',
-    fontSize: 10,
-    marginTop: 4,
-    lineHeight: 14,
-    fontWeight: '600',
+    color: '#8E9AA6',
+    lineHeight: 15,
+    fontWeight: '500',
   },
 });
-
-const borderTheme = (darkMode: boolean) => darkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)';

@@ -11,6 +11,12 @@ export interface UserProfile {
   isProfileSetup: boolean;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  // Extended fields for premium healthtech app
+  dob?: string;
+  height?: number; // In cm
+  bloodGroup?: string;
+  medicalNotes?: string;
+  avatar?: string; // base64 avatar
 }
 
 interface AuthState {
@@ -26,32 +32,67 @@ interface AuthState {
   clearError: () => void;
 }
 
+const STORAGE_KEY = 'hydrax-auth-storage';
+
+const loadSavedState = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      const data = window.localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return {
+          user: parsed.user ?? null,
+          isAuthenticated: parsed.isAuthenticated ?? false
+        };
+      }
+    } catch (e) {
+      console.error('Failed to load auth state', e);
+    }
+  }
+  return {
+    user: {
+      uid: 'mock-uid-123',
+      email: 'akash@hydrax.io',
+      displayName: 'Akash Sharma',
+      isProfileSetup: true,
+      age: 28,
+      weight: 74,
+      height: 178,
+      gender: 'Male',
+      activityLevel: 'high',
+      dob: '1998-05-15',
+      bloodGroup: 'O+',
+      emergencyContactName: 'Dr. Jane Smith',
+      emergencyContactPhone: '+15550199',
+      medicalNotes: 'No major allergies. Prior dehydration episode during marathon.',
+      avatar: '',
+    },
+    isAuthenticated: true
+  };
+};
+
+const saveState = (user: UserProfile | null, isAuthenticated: boolean) => {
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, isAuthenticated }));
+    } catch (e) {
+      console.error('Failed to save auth state', e);
+    }
+  }
+};
+
+const initialState = loadSavedState();
+
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: {
-    uid: 'mock-uid-123',
-    email: 'akash@hydrax.io',
-    displayName: 'Akash',
-    isProfileSetup: true,
-    age: 28,
-    weight: 74,
-    gender: 'Male',
-    activityLevel: 'high',
-    emergencyContactName: 'Dr. Jane Smith',
-    emergencyContactPhone: '+1-555-0199'
-  },
-  isAuthenticated: true,
+  user: initialState.user,
+  isAuthenticated: initialState.isAuthenticated,
   isLoading: false,
   error: null,
 
   login: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      // In a production setup, Firebase Auth goes here:
-      // const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      
-      // Simulation delay:
       await new Promise((resolve) => setTimeout(resolve, 1000));
-
       if (email === "error@hydrax.com") {
         throw new Error("Invalid credentials");
       }
@@ -63,13 +104,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isProfileSetup: true,
         age: 28,
         weight: 74,
+        height: 178,
         gender: 'Male',
         activityLevel: 'high',
+        dob: '1998-05-15',
+        bloodGroup: 'O+',
         emergencyContactName: 'Dr. Jane Smith',
-        emergencyContactPhone: '+1-555-0199'
+        emergencyContactPhone: '+15550199',
+        medicalNotes: 'No allergies.',
+        avatar: '',
       };
 
       set({ user: mockUser, isAuthenticated: true, isLoading: false });
+      saveState(mockUser, true);
     } catch (err: any) {
       set({ error: err.message || 'Login failed', isLoading: false });
     }
@@ -78,17 +125,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signup: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      // In production: createUserWithEmailAndPassword(auth, email, password);
       await new Promise((resolve) => setTimeout(resolve, 1000));
-
       const mockUser: UserProfile = {
-        uid: 'mock-uid-' + Math.random().toString(36).substr(2, 9),
+        uid: 'mock-uid-' + Math.random().toString(36).substring(2, 11),
         email,
         displayName: email.split('@')[0],
         isProfileSetup: false,
+        age: 25,
+        weight: 70,
+        height: 175,
+        gender: 'Other',
+        activityLevel: 'medium',
+        dob: '2001-01-01',
+        bloodGroup: 'B+',
+        emergencyContactName: '',
+        emergencyContactPhone: '',
+        medicalNotes: '',
+        avatar: '',
       };
 
       set({ user: mockUser, isAuthenticated: true, isLoading: false });
+      saveState(mockUser, true);
     } catch (err: any) {
       set({ error: err.message || 'Signup failed', isLoading: false });
     }
@@ -105,12 +162,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isProfileSetup: true,
         age: 32,
         weight: 80,
+        height: 182,
         gender: 'Male',
         activityLevel: 'high',
+        dob: '1994-08-20',
+        bloodGroup: 'A+',
         emergencyContactName: 'Sarah Doe',
-        emergencyContactPhone: '+1-555-9876'
+        emergencyContactPhone: '+15559876',
+        medicalNotes: 'Gluten sensitive.',
+        avatar: '',
       };
       set({ user: mockUser, isAuthenticated: true, isLoading: false });
+      saveState(mockUser, true);
     } catch (err: any) {
       set({ error: 'Google login failed', isLoading: false });
     }
@@ -120,6 +183,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     await new Promise((resolve) => setTimeout(resolve, 500));
     set({ user: null, isAuthenticated: false, isLoading: false });
+    saveState(null, false);
   },
 
   updateProfile: async (updates) => {
@@ -131,12 +195,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const updatedUser: UserProfile = {
         ...currentUser,
         ...updates,
-        isProfileSetup: true, // Mark complete once updated
+        isProfileSetup: true,
       };
 
-      // In production: updateDoc(doc(db, "users", currentUser.uid), updatedUser);
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 500));
       set({ user: updatedUser, isLoading: false });
+      saveState(updatedUser, get().isAuthenticated);
     } catch (err: any) {
       set({ error: err.message || 'Failed to update profile', isLoading: false });
     }
