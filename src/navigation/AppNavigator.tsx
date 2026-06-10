@@ -12,7 +12,10 @@ import {
   Wifi,
   Sparkles,
   Sun,
-  Moon
+  Moon,
+  TrendingUp,
+  FileText,
+  Settings
 } from 'lucide-react-native';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useBLEStore } from '../store/useBLEStore';
@@ -23,6 +26,14 @@ import { HistoryScreen } from '../screens/HistoryScreen';
 import { DeviceScreen } from '../screens/DeviceScreen';
 import { InsightsScreen } from '../screens/InsightsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { AICoachScreen } from '../screens/AICoachScreen';
+import { RecoveryPlannerScreen } from '../screens/RecoveryPlannerScreen';
+import { HydrationPlannerScreen } from '../screens/HydrationPlannerScreen';
+import { WeeklyReportsScreen } from '../screens/WeeklyReportsScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
+
+// Voice Assistant
+import { VoiceAssistant } from '../components/VoiceAssistant';
 
 export const AppNavigator: React.FC = () => {
   const { width } = useWindowDimensions();
@@ -48,6 +59,16 @@ export const AppNavigator: React.FC = () => {
         return <InsightsScreen />;
       case 'profile':
         return <ProfileScreen />;
+      case 'aiCoach':
+        return <AICoachScreen />;
+      case 'recoveryPlanner':
+        return <RecoveryPlannerScreen />;
+      case 'hydrationPlanner':
+        return <HydrationPlannerScreen />;
+      case 'weeklyReports':
+        return <WeeklyReportsScreen />;
+      case 'settings':
+        return <SettingsScreen />;
       default:
         return <DashboardScreen />;
     }
@@ -59,6 +80,11 @@ export const AppNavigator: React.FC = () => {
     { id: 'insights', label: 'AI Insights', icon: Brain },
     { id: 'device', label: 'Band Manager', icon: Cpu },
     { id: 'profile', label: 'Profile Setup', icon: User },
+    { id: 'aiCoach', label: 'AI Coach', icon: Sparkles },
+    { id: 'recoveryPlanner', label: 'Recovery Planner', icon: TrendingUp },
+    { id: 'hydrationPlanner', label: 'Hydration Planner', icon: Droplet },
+    { id: 'weeklyReports', label: 'Weekly Reports', icon: FileText },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;
 
   const handleMobileScanPress = () => {
@@ -71,7 +97,8 @@ export const AppNavigator: React.FC = () => {
   // 1. DESKTOP SIDEBAR LAYOUT
   if (isDesktop) {
     return (
-      <View style={[styles.desktopContainer, { backgroundColor: darkMode ? '#050B18' : '#F8FAFC' }]}>
+      <View style={{ flex: 1 }}>
+        <View style={[styles.desktopContainer, { backgroundColor: darkMode ? '#050B18' : '#F8FAFC' }]}>
         {/* Left Sidebar */}
         <View style={[
           styles.sidebar, 
@@ -92,7 +119,7 @@ export const AppNavigator: React.FC = () => {
           </View>
 
           {/* Nav Items */}
-          <View style={styles.sidebarMenu}>
+          <ScrollView showsVerticalScrollIndicator={false} style={styles.sidebarMenu} contentContainerStyle={{ paddingBottom: 16 }}>
             {menuItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -128,7 +155,7 @@ export const AppNavigator: React.FC = () => {
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* Desktop Device Controller Status Widget */}
           <View style={styles.sidebarFooter}>
@@ -194,6 +221,8 @@ export const AppNavigator: React.FC = () => {
             {renderScreen()}
           </View>
         </View>
+        </View>
+        <VoiceAssistant />
       </View>
     );
   }
@@ -205,7 +234,8 @@ export const AppNavigator: React.FC = () => {
   const mobileInactiveColor = darkMode ? '#8E9AA6' : '#64748B';
 
   return (
-    <View style={[styles.mobileContainer, { backgroundColor: darkMode ? '#050B18' : '#F8FAFC' }]}>
+    <View style={{ flex: 1 }}>
+      <View style={[styles.mobileContainer, { backgroundColor: darkMode ? '#050B18' : '#F8FAFC' }]}>
       {/* Active Screen rendering */}
       <View style={styles.mobileScreenContent}>
         {renderScreen()}
@@ -257,6 +287,8 @@ export const AppNavigator: React.FC = () => {
           <User size={20} color={activeTab === 'profile' ? mobileActiveColor : mobileInactiveColor} />
         </TouchableOpacity>
       </View>
+      </View>
+      <VoiceAssistant />
     </View>
   );
 };

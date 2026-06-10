@@ -21,11 +21,11 @@ interface SettingsState {
   language: 'en' | 'es' | 'ja';
   emergencyContacts: EmergencyContact[];
   notifications: NotificationItem[];
-  activeTab: 'dashboard' | 'history' | 'device' | 'insights' | 'profile';
+  activeTab: 'dashboard' | 'history' | 'device' | 'insights' | 'profile' | 'aiCoach' | 'recoveryPlanner' | 'hydrationPlanner' | 'weeklyReports' | 'settings';
   setDarkMode: (enabled: boolean) => void;
   setUnits: (units: 'metric' | 'imperial') => void;
   setLanguage: (language: 'en' | 'es' | 'ja') => void;
-  setActiveTab: (tab: 'dashboard' | 'history' | 'device' | 'insights' | 'profile') => void;
+  setActiveTab: (tab: 'dashboard' | 'history' | 'device' | 'insights' | 'profile' | 'aiCoach' | 'recoveryPlanner' | 'hydrationPlanner' | 'weeklyReports' | 'settings') => void;
   addEmergencyContact: (name: string, phone: string) => void;
   removeEmergencyContact: (id: string) => void;
   updateEmergencyContact: (id: string, name: string, phone: string) => void;
