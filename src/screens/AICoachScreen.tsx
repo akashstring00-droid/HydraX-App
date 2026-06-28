@@ -175,6 +175,15 @@ export const AICoachScreen: React.FC = () => {
   const chatScrollRef = useRef<ScrollView>(null);
   const activeSession = sessions.find(s => s.id === selectedSessionId) || sessions[0];
 
+  const lastMessageText = activeSession?.messages[activeSession.messages.length - 1]?.text || '';
+
+  // Auto-scroll to bottom of chat
+  useEffect(() => {
+    setTimeout(() => {
+      chatScrollRef.current?.scrollToEnd({ animated: true });
+    }, 60);
+  }, [activeSession?.messages.length, lastMessageText, isTyping]);
+
   const suggestionPrompts = [
     'How much water should I drink?',
     'Why am I tired?',
@@ -659,11 +668,12 @@ export const AICoachScreen: React.FC = () => {
               </View>
             </View>
 
-            <View style={{ flex: 1, position: 'relative' }}>
+            <View style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
               <ScrollView 
                 ref={chatScrollRef}
+                style={{ flex: 1 }}
                 contentContainerStyle={styles.messageList}
-                showsVerticalScrollIndicator={false}
+                showsVerticalScrollIndicator={true}
               >
                 {activeSession.messages.length === 0 ? (
                   <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, paddingHorizontal: 20 }}>
@@ -984,11 +994,13 @@ const styles = StyleSheet.create({
   },
   bubbleContainer: {
     flexDirection: 'column',
+    flexShrink: 1,
   },
   messageBubble: {
     borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    flexShrink: 1,
   },
   coachBubble: {
     backgroundColor: 'rgba(255, 255, 255, 0.01)',
