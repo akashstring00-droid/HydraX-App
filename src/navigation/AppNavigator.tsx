@@ -15,7 +15,10 @@ import {
   Moon,
   TrendingUp,
   FileText,
-  Settings
+  Settings,
+  Clock,
+  Download,
+  ShieldAlert
 } from 'lucide-react-native';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useBLEStore } from '../store/useBLEStore';
@@ -31,11 +34,21 @@ import { RecoveryPlannerScreen } from '../screens/RecoveryPlannerScreen';
 import { HydrationPlannerScreen } from '../screens/HydrationPlannerScreen';
 import { WeeklyReportsScreen } from '../screens/WeeklyReportsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { TimelineScreen } from '../screens/TimelineScreen';
+import { ExportScreen } from '../screens/ExportScreen';
+import { EmergencyScreen } from '../screens/EmergencyScreen';
+import { AdminDashboardScreen } from '../screens/AdminDashboardScreen';
+
+import { useAuthStore } from '../store/useAuthStore';
+import { AuthScreen } from '../screens/AuthScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 
 // Voice Assistant
 import { VoiceAssistant } from '../components/VoiceAssistant';
+import { Toast } from '../components/Toast';
 
 export const AppNavigator: React.FC = () => {
+  const { isAuthenticated, user } = useAuthStore();
   const { width } = useWindowDimensions();
   const activeTab = useSettingsStore((state) => state.activeTab);
   const setActiveTab = useSettingsStore((state) => state.setActiveTab);
@@ -67,14 +80,22 @@ export const AppNavigator: React.FC = () => {
         return <HydrationPlannerScreen />;
       case 'weeklyReports':
         return <WeeklyReportsScreen />;
+      case 'timeline':
+        return <TimelineScreen />;
+      case 'exportCenter':
+        return <ExportScreen />;
+      case 'emergencyMode':
+        return <EmergencyScreen />;
       case 'settings':
         return <SettingsScreen />;
+      case 'adminConsole':
+        return <AdminDashboardScreen />;
       default:
         return <DashboardScreen />;
     }
   };
 
-  const menuItems = [
+  const baseMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'history', label: 'Journal Logs', icon: Calendar },
     { id: 'insights', label: 'AI Insights', icon: Brain },
@@ -84,8 +105,15 @@ export const AppNavigator: React.FC = () => {
     { id: 'recoveryPlanner', label: 'Recovery Planner', icon: TrendingUp },
     { id: 'hydrationPlanner', label: 'Hydration Planner', icon: Droplet },
     { id: 'weeklyReports', label: 'Weekly Reports', icon: FileText },
+    { id: 'timeline', label: 'Health Timeline', icon: Clock },
+    { id: 'exportCenter', label: 'Export Center', icon: Download },
+    { id: 'emergencyMode', label: 'Emergency Mode', icon: ShieldAlert },
     { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;
+
+  const menuItems = user?.isAdmin
+    ? [...baseMenuItems, { id: 'adminConsole', label: 'Admin Console', icon: ShieldAlert } as const]
+    : baseMenuItems;
 
   const handleMobileScanPress = () => {
     setActiveTab('device');
@@ -93,6 +121,24 @@ export const AppNavigator: React.FC = () => {
       startScan();
     }, 100);
   };
+
+  if (!isAuthenticated) {
+    return (
+      <View style={{ flex: 1 }}>
+        <AuthScreen />
+        <Toast />
+      </View>
+    );
+  }
+
+  if (!user?.isProfileSetup) {
+    return (
+      <View style={{ flex: 1 }}>
+        <OnboardingScreen />
+        <Toast />
+      </View>
+    );
+  }
 
   // 1. DESKTOP SIDEBAR LAYOUT
   if (isDesktop) {
@@ -223,6 +269,7 @@ export const AppNavigator: React.FC = () => {
         </View>
         </View>
         <VoiceAssistant />
+        <Toast />
       </View>
     );
   }
@@ -289,6 +336,7 @@ export const AppNavigator: React.FC = () => {
       </View>
       </View>
       <VoiceAssistant />
+      <Toast />
     </View>
   );
 };

@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+import { requestPermissions, scheduleReminders } from '../lib/notifications';
+import { supabase } from '../lib/supabase';
+import { useAuthStore } from './useAuthStore';
 
 export interface WaterLog {
   id: string;
@@ -12,8 +15,10 @@ interface WaterState {
   logs: WaterLog[];
   remindersEnabled: boolean;
   reminderInterval: number;  // in minutes
-  logWater: (amount: number) => void;
-  removeLog: (id: string) => void;
+  logWater: (amount: number) => Promise<void>;
+  removeLog: (id: string) => Promise<void>;
+  updateLog: (id: string, amount: number) => Promise<void>;
+  loadWaterLogs: () => Promise<void>;
   setDailyTarget: (target: number) => void;
   toggleReminders: () => void;
   setReminderInterval: (minutes: number) => void;
@@ -76,14 +81,71 @@ export const useWaterStore = create<WaterState>((set, get) => ({
   remindersEnabled: initialState.remindersEnabled,
   reminderInterval: initialState.reminderInterval,
 
-  logWater: (amount) => {
+  loadWaterLogs: async () => {
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const { data, error } = await supabase
+        .from('water_logs')
+        .select('*')
+        .eq('user_id', user.uid)
+        .gte('timestamp', startOfDay.toISOString())
+        .order('timestamp', { ascending: false });
+
+      if (error) throw new Error(error.message);
+
+      if (data) {
+        const formattedLogs = data.map((d: any) => ({
+          id: d.id,
+          amount: d.amount,
+          timestamp: d.timestamp
+        }));
+        const totalIntake = formattedLogs.reduce((sum: number, log: any) => sum + log.amount, 0);
+        set({ logs: formattedLogs, currentIntake: totalIntake });
+        saveState({ logs: formattedLogs, currentIntake: totalIntake });
+      }
+    } catch (e) {
+      console.warn('Supabase load water logs failed:', e);
+    }
+  },
+
+  logWater: async (amount) => {
     const newLog: WaterLog = {
       id: 'water-' + Math.random().toString(36).substring(2, 11),
       amount,
       timestamp: new Date().toISOString()
     };
+    
+    const user = useAuthStore.getState().user;
+    if (user) {
+      try {
+        const { data, error } = await supabase.from('water_logs').insert({
+          user_id: user.uid,
+          amount,
+          timestamp: newLog.timestamp
+        }).select();
+        
+        if (error) throw new Error(error.message);
+        if (data && data[0]) {
+          newLog.id = data[0].id;
+        }
+      } catch (e) {
+        console.warn('Supabase log water insert failed:', e);
+      }
+    }
+
     const updatedLogs = [newLog, ...get().logs];
     const updatedIntake = get().currentIntake + amount;
+
+    if (get().currentIntake < get().dailyWaterTarget && updatedIntake >= get().dailyWaterTarget) {
+      try {
+        const { triggerGoalAchievement } = require('../lib/notifications');
+        triggerGoalAchievement(7);
+      } catch (e) {}
+    }
     
     set({
       logs: updatedLogs,
@@ -96,12 +158,51 @@ export const useWaterStore = create<WaterState>((set, get) => ({
     });
   },
 
-  removeLog: (id) => {
+  removeLog: async (id) => {
     const logToRemove = get().logs.find((log) => log.id === id);
     if (!logToRemove) return;
 
+    try {
+      const { error } = await supabase.from('water_logs').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+    } catch (e) {
+      console.warn('Supabase delete water log failed:', e);
+    }
+
     const updatedLogs = get().logs.filter((log) => log.id !== id);
     const updatedIntake = Math.max(0, get().currentIntake - logToRemove.amount);
+
+    set({
+      logs: updatedLogs,
+      currentIntake: updatedIntake
+    });
+
+    saveState({
+      logs: updatedLogs,
+      currentIntake: updatedIntake
+    });
+  },
+
+  updateLog: async (id, amount) => {
+    const logs = get().logs;
+    const logIndex = logs.findIndex((log) => log.id === id);
+    if (logIndex === -1) return;
+
+    try {
+      const { error } = await supabase.from('water_logs').update({ amount }).eq('id', id);
+      if (error) throw new Error(error.message);
+    } catch (e) {
+      console.warn('Supabase update water log failed:', e);
+    }
+
+    const oldAmount = logs[logIndex].amount;
+    const updatedLogs = [...logs];
+    updatedLogs[logIndex] = {
+      ...updatedLogs[logIndex],
+      amount
+    };
+
+    const updatedIntake = Math.max(0, get().currentIntake - oldAmount + amount);
 
     set({
       logs: updatedLogs,
@@ -123,11 +224,19 @@ export const useWaterStore = create<WaterState>((set, get) => ({
     const nextVal = !get().remindersEnabled;
     set({ remindersEnabled: nextVal });
     saveState({ remindersEnabled: nextVal });
+    if (nextVal) {
+      requestPermissions().then((granted) => {
+        scheduleReminders(granted, get().reminderInterval);
+      });
+    } else {
+      scheduleReminders(false, get().reminderInterval);
+    }
   },
   
   setReminderInterval: (minutes) => {
     set({ reminderInterval: minutes });
     saveState({ reminderInterval: minutes });
+    scheduleReminders(get().remindersEnabled, minutes);
   },
 
   resetDailyIntake: () => {

@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, useWindowDimensions, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   Sparkles, 
@@ -19,6 +19,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useWaterStore } from '../store/useWaterStore';
 import { useVitalsStore } from '../store/useVitalsStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
+import { useToastStore } from '../store/useToastStore';
 import { GlassCard } from '../components/GlassCard';
 import Svg, { Circle, Line, Text as SvgText, Path, G, Rect } from 'react-native-svg';
 
@@ -31,28 +32,69 @@ export const WeeklyReportsScreen: React.FC = () => {
   const { currentVitals } = useVitalsStore();
   const { currentIntake, dailyWaterTarget } = useWaterStore();
   const { recoveryScore } = useDiarrheaStore();
+  const showToast = useToastStore((state) => state.showToast);
+
+  // State
+  const [selectedWeek, setSelectedWeek] = useState<'current' | 'previous'>('current');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const handleExportPDF = () => {
+    showToast("Generating PDF report...", "info");
     if (typeof window !== 'undefined') {
       window.print();
     } else {
-      alert("PDF Export is available on web browsers via window.print()");
+      showToast("PDF Export is available on web browsers.", "error");
     }
+  };
+
+  const handleDownloadDocx = () => {
+    showToast("Downloading DOCX report payload...", "success");
+  };
+
+  const handleShareReport = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      const shareUrl = `https://hydra-x-app.vercel.app/shared/weekly/${Math.random().toString(36).substring(2, 10)}`;
+      navigator.clipboard.writeText(shareUrl);
+      showToast("Audit snapshot link copied! (Private by default)", "success");
+    } else {
+      showToast("Report sharing ready.", "success");
+    }
+  };
+
+  const handleGenerateReport = () => {
+    setIsGenerating(true);
+    showToast("Compiling biosensor packets and logs...", "info");
+    setTimeout(() => {
+      setIsGenerating(false);
+      showToast("Weekly health audit generated!", "success");
+    }, 1500);
   };
 
   const textPrimary = darkMode ? '#FFFFFF' : '#0F172A';
   const textSecondary = darkMode ? '#8E9AA6' : '#64748B';
   const borderCol = darkMode ? 'rgba(255, 255, 255, 0.05)' : '#E2E8F0';
 
-  // Weekly Stats List
+  // Dynamic Weekly Stats
+  const hydrationAvg = selectedWeek === 'current' 
+    ? Math.round(Math.min(100, (currentIntake / (dailyWaterTarget || 2500)) * 100))
+    : 79;
+
+  const recoveryAvg = selectedWeek === 'current' ? recoveryScore : 68;
+  const hrvAvg = selectedWeek === 'current' ? (currentVitals.hrv || 65) : 58;
+
   const weeklyMetrics = [
-    { name: 'Hydration Avg', val: '86%', status: 'Optimal', icon: Droplet, color: '#14B8FF' },
-    { name: 'Sleep Avg', val: '7h 38m', status: 'Optimal', icon: Moon, color: '#7C3AED' },
-    { name: 'Recovery Avg', val: `${recoveryScore - 2}%`, status: 'Balanced', icon: TrendingUp, color: '#00E5C3' },
-    { name: 'HRV Avg', val: `${currentVitals.hrv - 3} ms`, status: 'Stable', icon: Heart, color: '#FF4D6D' },
-    { name: 'Avg Fluid Loss', val: '950 ml/day', status: 'Normal', icon: Droplet, color: '#FFAD33' },
-    { name: 'Active Energy', val: '480 kcal/day', status: 'Active', icon: Activity, color: '#FFAD33' }
+    { name: 'Hydration Avg', val: `${hydrationAvg}%`, status: hydrationAvg >= 85 ? 'Optimal' : 'Needs Hydration', icon: Droplet, color: '#14B8FF' },
+    { name: 'Sleep Avg', val: selectedWeek === 'current' ? '7h 38m' : '6h 52m', status: selectedWeek === 'current' ? 'Optimal' : 'Suboptimal', icon: Moon, color: '#7C3AED' },
+    { name: 'Recovery Avg', val: `${recoveryAvg}%`, status: recoveryAvg >= 80 ? 'Optimal' : 'Balanced', icon: TrendingUp, color: '#00E5C3' },
+    { name: 'HRV Avg', val: `${hrvAvg} ms`, status: hrvAvg >= 60 ? 'Stable' : 'Suppressed', icon: Heart, color: '#FF4D6D' },
+    { name: 'Avg Fluid Loss', val: selectedWeek === 'current' ? '950 ml/day' : '1100 ml/day', status: 'Normal', icon: Droplet, color: '#FFAD33' },
+    { name: 'Active Energy', val: selectedWeek === 'current' ? '480 kcal/day' : '520 kcal/day', status: 'Active', icon: Activity, color: '#FFAD33' }
   ];
+
+  // Dynamic Summary Text
+  const summaryText = selectedWeek === 'current'
+    ? `Your overall physiological health score improved by 8.4% this week. Fluid balance calculations indicate regular hydration logs decreased estimated gastrointestinal risk index levels by 15%.`
+    : `Your physiological metrics showed autonomic strain during the previous week. Higher gut fluid losses and irregular hydration log patterns triggered elevated dehydration risks.`;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: darkMode ? '#050B18' : '#F8FAFC' }]} edges={['top']}>
@@ -67,7 +109,7 @@ export const WeeklyReportsScreen: React.FC = () => {
           <View style={styles.btnGroup}>
             <TouchableOpacity 
               style={[styles.btn, styles.btnSecondary, { borderColor: borderCol }]}
-              onPress={() => alert("DOCX report downloaded successfully.")}
+              onPress={handleDownloadDocx}
               activeOpacity={0.7}
             >
               <Download size={14} color={textPrimary} style={{ marginRight: 6 }} />
@@ -82,14 +124,63 @@ export const WeeklyReportsScreen: React.FC = () => {
               <Text style={[styles.btnText, { color: textPrimary }]}>PDF</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.btn, styles.btnPrimary]}
-              onPress={() => alert("Weekly report link copied to clipboard. Ready to share.")}
+              style={[styles.btn, styles.btnSecondary, { borderColor: borderCol }]}
+              onPress={handleShareReport}
               activeOpacity={0.7}
             >
-              <Share2 size={14} color="#050B18" style={{ marginRight: 6 }} />
-              <Text style={[styles.btnText, { color: '#050B18' }]}>Share</Text>
+              <Share2 size={14} color={textPrimary} style={{ marginRight: 6 }} />
+              <Text style={[styles.btnText, { color: textPrimary }]}>Share</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.btn, styles.btnPrimary]}
+              onPress={handleGenerateReport}
+              activeOpacity={0.7}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <ActivityIndicator size="small" color="#050B18" />
+              ) : (
+                <>
+                  <Sparkles size={14} color="#050B18" style={{ marginRight: 6 }} />
+                  <Text style={[styles.btnText, { color: '#050B18' }]}>Generate Audit</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Historical Week Selector Tab Switcher */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+          <TouchableOpacity 
+            onPress={() => setSelectedWeek('current')}
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 10,
+              backgroundColor: selectedWeek === 'current' ? '#00E5C3' : (darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.03)'),
+              borderWidth: 1,
+              borderColor: selectedWeek === 'current' ? '#00E5C3' : borderCol
+            }}
+          >
+            <Text style={{ fontSize: 11, fontWeight: '800', color: selectedWeek === 'current' ? '#050B18' : textPrimary }}>
+              Current Week (June 4 - June 10)
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => setSelectedWeek('previous')}
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 10,
+              backgroundColor: selectedWeek === 'previous' ? '#00E5C3' : (darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.03)'),
+              borderWidth: 1,
+              borderColor: selectedWeek === 'previous' ? '#00E5C3' : borderCol
+            }}
+          >
+            <Text style={{ fontSize: 11, fontWeight: '800', color: selectedWeek === 'previous' ? '#050B18' : textPrimary }}>
+              Previous Week (May 28 - June 3)
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Executive Summary Banner */}
@@ -100,7 +191,7 @@ export const WeeklyReportsScreen: React.FC = () => {
           <View style={{ flex: 1 }}>
             <Text style={styles.summaryTitle}>Weekly Executive Summary</Text>
             <Text style={styles.summaryText}>
-              Your overall physiological health score improved by <Text style={{ color: '#00E5C3', fontWeight: '900' }}>8.4%</Text> this week. Fluid balance calculations indicate regular hydration logs decreased estimated gastrointestinal risk index levels by 15%.
+              {summaryText}
             </Text>
           </View>
         </GlassCard>

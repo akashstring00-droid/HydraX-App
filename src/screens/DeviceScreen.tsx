@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useBLEStore, BLEDevice } from '../store/useBLEStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { useToastStore } from '../store/useToastStore';
 import { GlassCard } from '../components/GlassCard';
 import { useTranslation } from '../store/i18n';
 import { 
@@ -41,6 +42,7 @@ export const DeviceScreen: React.FC = () => {
   } = useBLEStore();
 
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const showToast = useToastStore((state) => state.showToast);
   const { t } = useTranslation();
   const styles = getStyles(darkMode);
 
@@ -73,6 +75,7 @@ export const DeviceScreen: React.FC = () => {
 
   const handleScanWifi = () => {
     setIsScanningWifi(true);
+    showToast("Scanning WiFi hotspots...", "info");
     setTimeout(() => {
       setIsScanningWifi(false);
       setShowWifiModal(true);
@@ -81,10 +84,11 @@ export const DeviceScreen: React.FC = () => {
 
   const handleConnectWifi = () => {
     if (wifiPassword.length < 4) {
-      Alert.alert('Invalid Password', 'WiFi security requires at least 4 characters.');
+      showToast("WiFi security requires at least 4 characters.", "error");
       return;
     }
     setIsConnectingWifi(true);
+    showToast(`Connecting to ${selectedWifi}...`, "info");
     setTimeout(() => {
       setIsConnectingWifi(false);
       setShowWifiModal(false);
@@ -93,7 +97,7 @@ export const DeviceScreen: React.FC = () => {
       setWifiIp(`192.168.1.${Math.floor(20 + Math.random() * 200)}`);
       setWifiSignal(-50 - Math.floor(Math.random() * 25));
       setWifiPassword('');
-      Alert.alert('WiFi Connected', `Smart band connected to network: ${selectedWifi}`);
+      showToast(`WiFi Connected to ${selectedWifi}!`, "success");
     }, 1800);
   };
 
@@ -102,6 +106,7 @@ export const DeviceScreen: React.FC = () => {
     setWifiSsid('');
     setWifiIp('');
     setWifiSignal(0);
+    showToast("WiFi disconnected.", "info");
   };
 
   const triggerFirmwareUpdate = () => {
@@ -110,6 +115,7 @@ export const DeviceScreen: React.FC = () => {
     setUpdateProgress(0);
     setUpdateLog([]);
     setUpdateStatus('Starting...');
+    showToast("Starting OTA Firmware Upgrade...", "info");
 
     const logs = [
       { p: 5, t: 'Connecting to Cloud OTA Servers...' },
@@ -135,6 +141,7 @@ export const DeviceScreen: React.FC = () => {
         clearInterval(interval);
         setFirmwareVersion('v1.0.4');
         setIsUpdating(false);
+        showToast("Firmware updated successfully to v1.0.4!", "success");
       }
     }, 900);
   };
@@ -167,17 +174,22 @@ export const DeviceScreen: React.FC = () => {
 
   const handleStartScan = () => {
     startScan();
+    showToast("BLE Scan active. Searching for smart bands...", "info");
     setTimeout(() => {
       stopScan();
+      showToast("BLE scan completed.", "info");
     }, 5000);
   };
 
   const handleConnect = async (device: BLEDevice) => {
     setConnectingId(device.id);
+    showToast(`Connecting to ${device.name}...`, "info");
     try {
       await connectDevice(device);
+      showToast(`Connected to ${device.name}!`, "success");
     } catch (err) {
       console.log('Connect error', err);
+      showToast("Failed to connect device.", "error");
     } finally {
       setConnectingId(null);
     }
@@ -186,8 +198,10 @@ export const DeviceScreen: React.FC = () => {
   const handleDisconnect = async () => {
     try {
       await disconnectDevice();
+      showToast("Smart band disconnected.", "info");
     } catch (err) {
       console.log('Disconnect error', err);
+      showToast("Error during disconnection.", "error");
     }
   };
 
@@ -262,7 +276,13 @@ export const DeviceScreen: React.FC = () => {
             {/* Simulated Demo Mode Toggler */}
             <View style={styles.demoModeContainer}>
               <Text style={[styles.demoModeLabel, { color: darkMode ? '#8E9AA6' : '#64748B' }]}>DEMO STREAM SIMULATOR</Text>
-              <TouchableOpacity onPress={toggleDemoMode} activeOpacity={0.8}>
+              <TouchableOpacity 
+                onPress={() => {
+                  toggleDemoMode();
+                  showToast(isDemoMode ? "Sensor simulator deactivated." : "Sensor simulator active and streaming!", "success");
+                }} 
+                activeOpacity={0.8}
+              >
                 {isDemoMode ? (
                   <ToggleRight size={38} color="#00E5C3" />
                 ) : (

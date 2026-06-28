@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { supabase } from '../lib/supabase';
+import { useAuthStore } from './useAuthStore';
 
 export interface VitalsData {
   heartRate: number;
@@ -28,6 +30,7 @@ interface VitalsState {
   dailyHistory: { time: string; hydrationScore: number; heartRate: number }[];
   addSensorData: (ppgValue: number, hrValue: number, hrvValue: number, tempValue: number, motionValue: number) => void;
   updatePrediction: (result: PredictionResult) => void;
+  loadVitalsHistory: () => Promise<void>;
   setVitals: (vitals: Partial<VitalsData>) => void;
   clearBuffers: () => void;
 }
@@ -156,6 +159,73 @@ export const useVitalsStore = create<VitalsState>((set, get) => ({
   updatePrediction: (result) => {
     set({ prediction: result });
     saveState({ prediction: result });
+
+    // Trigger recovery alarm if risk shifts to Medium or High
+    if (result.riskLevel === 'High' || result.riskLevel === 'Medium') {
+      const lastAlarmTime = (global as any).__vitalsLastAlarmTime || 0;
+      const now = Date.now();
+      if (now - lastAlarmTime > 3600000) {
+        (global as any).__vitalsLastAlarmTime = now;
+        try {
+          const { triggerRecoveryAlarm } = require('../lib/notifications');
+          triggerRecoveryAlarm(result.riskLevel);
+        } catch (e) {}
+      }
+    }
+
+    // Throttled database upload (every 30 seconds)
+    const user = useAuthStore.getState().user;
+    if (user) {
+      const now = Date.now();
+      const lastUploadTime = (global as any).__vitalsLastUploadTime || 0;
+      if (now - lastUploadTime > 30000) {
+        (global as any).__vitalsLastUploadTime = now;
+        const currentVitals = get().currentVitals;
+        
+        supabase.from('health_logs').insert({
+          user_id: user.uid,
+          heart_rate: currentVitals.heartRate,
+          hrv: currentVitals.hrv,
+          skin_temp: currentVitals.skinTemp,
+          motion: currentVitals.motion,
+          dehydration_percent: result.dehydrationPercent,
+          hydration_score: result.hydrationScore,
+          risk_level: result.riskLevel,
+          confidence_score: result.confidenceScore
+        }).then(({ error }: any) => {
+          if (error) console.warn('Failed to insert health logs to Supabase:', error);
+        });
+      }
+    }
+  },
+
+  loadVitalsHistory: async () => {
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const { data, error } = await supabase
+        .from('health_logs')
+        .select('timestamp, hydration_score, heart_rate')
+        .eq('user_id', user.uid)
+        .gte('timestamp', startOfDay.toISOString())
+        .order('timestamp', { ascending: true });
+        
+      if (error) throw new Error(error.message);
+      
+      if (data && data.length > 0) {
+        const formattedHistory = data.map((d: any) => ({
+          time: new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          hydrationScore: d.hydration_score,
+          heartRate: d.heart_rate
+        }));
+        set({ dailyHistory: formattedHistory });
+      }
+    } catch (e) {
+      console.warn('Failed to load vitals history from Supabase:', e);
+    }
   },
   
   setVitals: (vitals) => {

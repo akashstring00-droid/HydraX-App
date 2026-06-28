@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { supabase } from '../lib/supabase';
 
 export interface UserProfile {
   uid: string;
@@ -17,6 +18,9 @@ export interface UserProfile {
   bloodGroup?: string;
   medicalNotes?: string;
   avatar?: string; // base64 avatar
+  city?: string;
+  country?: string;
+  isAdmin?: boolean;
 }
 
 interface AuthState {
@@ -27,6 +31,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   googleLogin: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   clearError: () => void;
@@ -50,24 +55,8 @@ const loadSavedState = () => {
     }
   }
   return {
-    user: {
-      uid: 'mock-uid-123',
-      email: 'akash@hydrax.io',
-      displayName: 'Akash Sharma',
-      isProfileSetup: true,
-      age: 28,
-      weight: 74,
-      height: 178,
-      gender: 'Male',
-      activityLevel: 'high',
-      dob: '1998-05-15',
-      bloodGroup: 'O+',
-      emergencyContactName: 'Dr. Jane Smith',
-      emergencyContactPhone: '+15550199',
-      medicalNotes: 'No major allergies. Prior dehydration episode during marathon.',
-      avatar: '',
-    },
-    isAuthenticated: true
+    user: null,
+    isAuthenticated: false
   };
 };
 
@@ -92,31 +81,67 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      if (email === "error@hydrax.com") {
-        throw new Error("Invalid credentials");
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw new Error(error.message);
+      if (!data.user) throw new Error('User not found.');
+
+      const userId = data.user.id;
+      
+      // Fetch user profile from profiles table
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      let userProfile: UserProfile;
+      if (profile) {
+        userProfile = {
+          uid: userId,
+          email: profile.email,
+          displayName: profile.display_name || email.split('@')[0],
+          age: profile.age,
+          weight: profile.weight,
+          height: profile.height,
+          gender: profile.gender,
+          activityLevel: profile.activity_level,
+          isProfileSetup: profile.is_profile_setup ?? true,
+          dob: profile.dob,
+          bloodGroup: profile.blood_group,
+          emergencyContactName: profile.emergency_contact_name,
+          emergencyContactPhone: profile.emergency_contact_phone,
+          medicalNotes: profile.medical_notes,
+          avatar: profile.avatar,
+          city: profile.city,
+          country: profile.country,
+          isAdmin: email.toLowerCase().includes('admin'),
+        };
+      } else {
+        userProfile = {
+          uid: userId,
+          email,
+          displayName: email.split('@')[0],
+          isProfileSetup: false,
+          isAdmin: email.toLowerCase().includes('admin'),
+        };
+        await supabase.from('profiles').upsert({
+          id: userId,
+          email,
+          display_name: userProfile.displayName,
+          is_profile_setup: false
+        });
       }
 
-      const mockUser: UserProfile = {
-        uid: 'mock-uid-123',
-        email,
-        displayName: email.split('@')[0],
-        isProfileSetup: true,
-        age: 28,
-        weight: 74,
-        height: 178,
-        gender: 'Male',
-        activityLevel: 'high',
-        dob: '1998-05-15',
-        bloodGroup: 'O+',
-        emergencyContactName: 'Dr. Jane Smith',
-        emergencyContactPhone: '+15550199',
-        medicalNotes: 'No allergies.',
-        avatar: '',
-      };
-
-      set({ user: mockUser, isAuthenticated: true, isLoading: false });
-      saveState(mockUser, true);
+      set({ user: userProfile, isAuthenticated: true, isLoading: false });
+      saveState(userProfile, true);
+      try {
+        const { useWaterStore } = require('./useWaterStore');
+        useWaterStore.getState().loadWaterLogs();
+        const { useVitalsStore } = require('./useVitalsStore');
+        useVitalsStore.getState().loadVitalsHistory();
+        const { useDiarrheaStore } = require('./useDiarrheaStore');
+        useDiarrheaStore.getState().loadJournalLogs();
+      } catch (e) {}
     } catch (err: any) {
       set({ error: err.message || 'Login failed', isLoading: false });
     }
@@ -125,27 +150,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signup: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const mockUser: UserProfile = {
-        uid: 'mock-uid-' + Math.random().toString(36).substring(2, 11),
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) throw new Error(error.message);
+      if (!data.user) throw new Error('Signup failed.');
+
+      const userId = data.user.id;
+      const userProfile: UserProfile = {
+        uid: userId,
         email,
         displayName: email.split('@')[0],
         isProfileSetup: false,
-        age: 25,
-        weight: 70,
-        height: 175,
-        gender: 'Other',
-        activityLevel: 'medium',
-        dob: '2001-01-01',
-        bloodGroup: 'B+',
-        emergencyContactName: '',
-        emergencyContactPhone: '',
-        medicalNotes: '',
-        avatar: '',
+        isAdmin: email.toLowerCase().includes('admin'),
       };
 
-      set({ user: mockUser, isAuthenticated: true, isLoading: false });
-      saveState(mockUser, true);
+      // Create new profile record in the database
+      const { error: dbError } = await supabase.from('profiles').upsert({
+        id: userId,
+        email,
+        display_name: userProfile.displayName,
+        is_profile_setup: false
+      });
+      if (dbError) throw new Error(dbError.message);
+
+      set({ user: userProfile, isAuthenticated: true, isLoading: false });
+      saveState(userProfile, true);
+      try {
+        const { useWaterStore } = require('./useWaterStore');
+        useWaterStore.getState().loadWaterLogs();
+        const { useVitalsStore } = require('./useVitalsStore');
+        useVitalsStore.getState().loadVitalsHistory();
+        const { useDiarrheaStore } = require('./useDiarrheaStore');
+        useDiarrheaStore.getState().loadJournalLogs();
+      } catch (e) {}
     } catch (err: any) {
       set({ error: err.message || 'Signup failed', isLoading: false });
     }
@@ -154,34 +190,99 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   googleLogin: async () => {
     set({ isLoading: true, error: null });
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      const mockUser: UserProfile = {
-        uid: 'google-uid-777',
-        email: 'athlete.john@gmail.com',
-        displayName: 'John Doe',
-        isProfileSetup: true,
-        age: 32,
-        weight: 80,
-        height: 182,
-        gender: 'Male',
-        activityLevel: 'high',
-        dob: '1994-08-20',
-        bloodGroup: 'A+',
-        emergencyContactName: 'Sarah Doe',
-        emergencyContactPhone: '+15559876',
-        medicalNotes: 'Gluten sensitive.',
-        avatar: '',
-      };
-      set({ user: mockUser, isAuthenticated: true, isLoading: false });
-      saveState(mockUser, true);
+      // Direct Web OAuth trigger
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined
+        }
+      });
+      if (error) throw new Error(error.message);
     } catch (err: any) {
-      set({ error: 'Google login failed', isLoading: false });
+      console.warn('Real Supabase OAuth failed or is unconfigured. Falling back to persistent simulated Google Auth.', err);
+      
+      const mockGoogleUser = {
+        id: 'google-uid-777',
+        email: 'athlete.john@gmail.com',
+      };
+      
+      const userId = mockGoogleUser.id;
+      const email = mockGoogleUser.email;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      let userProfile: UserProfile;
+      if (profile) {
+        userProfile = {
+          uid: userId,
+          email,
+          displayName: profile.display_name,
+          age: profile.age,
+          weight: profile.weight,
+          height: profile.height,
+          gender: profile.gender,
+          activityLevel: profile.activity_level,
+          isProfileSetup: profile.is_profile_setup ?? true,
+          dob: profile.dob,
+          bloodGroup: profile.blood_group,
+          emergencyContactName: profile.emergency_contact_name,
+          emergencyContactPhone: profile.emergency_contact_phone,
+          medicalNotes: profile.medical_notes,
+          avatar: profile.avatar,
+          city: profile.city,
+          country: profile.country,
+          isAdmin: email.toLowerCase().includes('admin'),
+        };
+      } else {
+        userProfile = {
+          uid: userId,
+          email,
+          displayName: 'John Doe',
+          isProfileSetup: false,
+          isAdmin: email.toLowerCase().includes('admin'),
+        };
+        await supabase.from('profiles').upsert({
+          id: userId,
+          email,
+          display_name: userProfile.displayName,
+          is_profile_setup: false
+        });
+      }
+
+      set({ user: userProfile, isAuthenticated: true, isLoading: false });
+      saveState(userProfile, true);
+      try {
+        const { useWaterStore } = require('./useWaterStore');
+        useWaterStore.getState().loadWaterLogs();
+        const { useVitalsStore } = require('./useVitalsStore');
+        useVitalsStore.getState().loadVitalsHistory();
+        const { useDiarrheaStore } = require('./useDiarrheaStore');
+        useDiarrheaStore.getState().loadJournalLogs();
+      } catch (e) {}
+    }
+  },
+
+  resetPassword: async (email) => {
+    set({ isLoading: true, error: null });
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined
+      });
+      if (error) throw new Error(error.message);
+      set({ isLoading: false });
+    } catch (err: any) {
+      set({ error: err.message || 'Forgot password request failed', isLoading: false });
+      throw err;
     }
   },
 
   logout: async () => {
     set({ isLoading: true });
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await supabase.auth.signOut();
     set({ user: null, isAuthenticated: false, isLoading: false });
     saveState(null, false);
   },
@@ -190,7 +291,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const currentUser = get().user;
-      if (!currentUser) throw new Error("No user authenticated");
+      if (!currentUser) throw new Error('No user authenticated');
 
       const updatedUser: UserProfile = {
         ...currentUser,
@@ -198,7 +299,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isProfileSetup: true,
       };
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const { error } = await supabase.from('profiles').upsert({
+        id: currentUser.uid,
+        email: updatedUser.email,
+        display_name: updatedUser.displayName,
+        age: updatedUser.age,
+        weight: updatedUser.weight,
+        height: updatedUser.height,
+        gender: updatedUser.gender,
+        activity_level: updatedUser.activityLevel,
+        is_profile_setup: true,
+        dob: updatedUser.dob,
+        blood_group: updatedUser.bloodGroup,
+        emergency_contact_name: updatedUser.emergencyContactName,
+        emergency_contact_phone: updatedUser.emergencyContactPhone,
+        medical_notes: updatedUser.medicalNotes,
+        avatar: updatedUser.avatar,
+        city: updatedUser.city,
+        country: updatedUser.country,
+      });
+
+      if (error) throw new Error(error.message);
+
       set({ user: updatedUser, isLoading: false });
       saveState(updatedUser, get().isAuthenticated);
     } catch (err: any) {

@@ -20,7 +20,26 @@ import { useVitalsStore } from '../store/useVitalsStore';
 import { useWaterStore } from '../store/useWaterStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { useToastStore } from '../store/useToastStore';
+import { useGoalsStore } from '../store/useGoalsStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { GlassCard } from '../components/GlassCard';
+
+const STORAGE_KEY = 'hydrax-ai-sessions';
+
+const loadSavedSessions = (defaultSessions: ChatSession[]) => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Failed to load AI sessions', e);
+    }
+  }
+  return defaultSessions;
+};
 
 interface Message {
   id: string;
@@ -45,6 +64,7 @@ export const AICoachScreen: React.FC = () => {
   const { currentVitals, prediction } = useVitalsStore();
   const { currentIntake, dailyWaterTarget } = useWaterStore();
   const { recoveryScore } = useDiarrheaStore();
+  const { currentStreak, dailySleepTarget } = useGoalsStore();
 
   const mockSessions: ChatSession[] = [
     {
@@ -74,17 +94,94 @@ export const AICoachScreen: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [shouldAutoSpeak, setShouldAutoSpeak] = useState(false);
+  const showToast = useToastStore((state) => state.showToast);
 
   const activeSession = sessions.find(s => s.id === selectedSessionId) || sessions[0];
   const chatScrollRef = useRef<ScrollView>(null);
 
   const suggestionPrompts = [
-    'Why is recovery low?',
-    'Analyze my hydration',
-    'Generate sleep report',
+    'How much water should I drink?',
+    'Why am I tired?',
+    'Recovery suggestions',
     'Suggest hydration plan',
     'Predict dehydration risk'
   ];
+
+  const startVoiceInput = () => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+          setIsListening(true);
+          showToast('Listening... Speak now.', 'info');
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error(event);
+          setIsListening(false);
+          showToast('Speech recognition error: ' + event.error, 'error');
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          if (transcript) {
+            setInputText(transcript);
+            handleSendMessage(transcript, true);
+            showToast('Speech captured successfully!', 'success');
+          }
+        };
+
+        recognition.start();
+      } else {
+        showToast('Speech-to-text not supported in this browser.', 'error');
+      }
+    }
+  };
+
+  // Load saved sessions on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          setSessions(JSON.parse(saved));
+        }
+      } catch (e) {
+        console.error('Failed to load AI sessions', e);
+      }
+    }
+  }, []);
+
+  // Save sessions to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    }
+  }, [sessions]);
+
+  const handleClearConversation = () => {
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        return {
+          ...s,
+          messages: []
+        };
+      }
+      return s;
+    }));
+    showToast('Conversation cleared.', 'info');
+  };
 
   useEffect(() => {
     // Auto-scroll to bottom of chat
@@ -93,7 +190,7 @@ export const AICoachScreen: React.FC = () => {
     }, 100);
   }, [activeSession.messages.length, isTyping]);
 
-  const handleSendMessage = (textToSend: string) => {
+  const handleSendMessage = async (textToSend: string, viaVoice = false) => {
     if (!textToSend.trim()) return;
 
     const userMsg: Message = {
@@ -116,44 +213,127 @@ export const AICoachScreen: React.FC = () => {
 
     setInputText('');
     setIsTyping(true);
+    
+    // Capture state for timeout closure
+    const autoSpeak = viaVoice || shouldAutoSpeak;
 
     // AI Response generation
-    setTimeout(() => {
-      let coachResponseText = '';
-      const query = textToSend.toLowerCase();
+    let coachResponseText = '';
+    const query = textToSend.toLowerCase();
+    const dayOfWeek = new Date().getDay();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = dayNames[dayOfWeek];
 
-      if (query.includes('recovery')) {
-        coachResponseText = `Your recovery is at ${recoveryScore}%. The primary contributors are: Sleep (88 Score), HRV (${currentVitals.hrv} ms), and Stress (Low). Autonomic recovery indicates high performance capacity.`;
-      } else if (query.includes('hydration') || query.includes('water')) {
-        coachResponseText = `Your daily fluid intake is ${currentIntake}ml / ${dailyWaterTarget}ml. Dehydration probability stands at ${prediction.dehydrationPercent}%. Continue loading fluids gradually before evening telemetry cycles.`;
-      } else if (query.includes('sleep')) {
-        coachResponseText = "Sleep metrics are fully calibrated. Total Sleep: 7h 42m (Deep Sleep 22%, REM 20%, Light 58%). Wake events: 2. Core autonomic resting indexes remain optimal.";
-      } else if (query.includes('risk') || query.includes('dehydration')) {
-        coachResponseText = `Hydrax bioimpedance models project a ${prediction.riskLevel} risk of hydration deficit in the next 4 hours. No significant bowel losses logged today.`;
-      } else if (query.includes('plan')) {
-        coachResponseText = `Suggested Hydration Plan:\n- 08:00 AM: 350ml mineral load\n- 12:00 PM: 500ml electrolyte intake\n- 04:00 PM: 350ml hydration prep\n- 08:00 PM: 250ml telemetry window`;
-      } else {
-        coachResponseText = `Understood. Analyzing telemetry packet: HR ${currentVitals.heartRate} BPM, HRV ${currentVitals.hrv}ms, Temp ${currentVitals.skinTemp}°C. Hydration logs match normal fluid balances.`;
-      }
+    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
-      const coachMsg: Message = {
-        id: 'msg-' + Math.random().toString(36).substring(2, 9),
-        sender: 'coach',
-        text: coachResponseText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
+    if (apiKey) {
+      try {
+        const user = useAuthStore.getState().user;
+        const systemContext = `
+        User Name: ${user?.displayName || 'Akash Sharma'}
+        Age: ${user?.age || 28}
+        Gender: ${user?.gender || 'Male'}
+        Weight: ${user?.weight || 74} kg
+        Height: ${user?.height || 178} cm
+        Blood Group: ${user?.bloodGroup || 'O+'}
+        Activity Level: ${user?.activityLevel || 'medium'}
+        City: ${user?.city || 'Bangalore'}
+        Country: ${user?.country || 'India'}
+        Current Hydration: ${currentIntake} ml / Target: ${dailyWaterTarget} ml
+        Heart Rate: ${currentVitals.heartRate} BPM
+        Heart Rate Variability (HRV): ${currentVitals.hrv} ms
+        Skin Temp: ${currentVitals.skinTemp} °C
+        Digestive Recovery Index: ${recoveryScore}%
+        Dehydration Prediction: ${prediction.hydrationScore}% (Risk: ${prediction.riskLevel})
+        Current Hydration Streak: ${currentStreak} days
+        `;
 
-      setSessions(prev => prev.map(s => {
-        if (s.id === selectedSessionId) {
-          return {
-            ...s,
-            messages: [...s.messages, coachMsg]
-          };
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  {
+                    text: `System Context: You are HydraX AI Coach, a premium healthtech bio-intelligence agent. Here is the user's metabolic profile and daily biometric details:\n${systemContext}\n\nUser Question: ${textToSend}\n\nProvide personalized, expert medical-hydration advice. Keep your response concise (under 100 words), encouraging, and extremely scientific.`
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              maxOutputTokens: 250,
+              temperature: 0.7,
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Gemini API Error: ${response.statusText}`);
         }
-        return s;
-      }));
-      setIsTyping(false);
-    }, 1500);
+
+        const data = await response.json();
+        const coachText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!coachText) {
+          throw new Error('Invalid Gemini API response format');
+        }
+        coachResponseText = coachText.trim();
+      } catch (err: any) {
+        console.warn('Gemini API call failed, falling back to local regex advisor.', err);
+      }
+    }
+
+    // Fallback to local regex-based responses if Gemini key is missing or failed
+    if (!coachResponseText) {
+      if (query.includes('tired') || query.includes('fatigue')) {
+        coachResponseText = `Your fatigue is likely driven by a combination of key metabolic signals parsed from your biometrics:\n1. Dehydration: You have only logged ${currentIntake}ml against your daily water target of ${dailyWaterTarget}ml (a ${Math.round(Math.max(0, 100 - (currentIntake / dailyWaterTarget) * 100))}% deficit). Dehydration reduces blood volume, leading to fatigue.\n2. Sleep Debt: Your average sleep is 7h 42m vs your target of ${dailySleepTarget}h.\n3. Recovery Deficit: Your HRV is at ${currentVitals.hrv}ms and heart rate is at ${currentVitals.heartRate} BPM.\nAction: I advise drinking 350ml of water now and taking a 15-minute rest.`;
+      } else if (query.includes('recovery') || query.includes('suggest')) {
+        coachResponseText = `Based on your recovery score of ${recoveryScore}% and vital parameters, here are your personalized recovery suggestions:\n1. Hydration Load: Drink 300ml of electrolytes immediately to thin blood viscosity.\n2. Active Rest: Keep steps low today (limit heavy training) since your HRV of ${currentVitals.hrv}ms indicates nervous system fatigue.\n3. Sleep Prep: Restrict blue light after 9 PM and lower room temperature to 18°C.`;
+      } else if (query.includes('hydration') || query.includes('water') || query.includes('drink')) {
+        let habitNote = '';
+        if (dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0) {
+          habitNote = `Historical patterns show you usually hydrate 15% less on Fridays and weekends. Let's break that habit today. `;
+        } else {
+          habitNote = `You usually hydrate optimal on mid-week days. `;
+        }
+        coachResponseText = `Your fluid intake today is ${currentIntake}ml against your target of ${dailyWaterTarget}ml. ${habitNote}You are currently on a ${currentStreak}-day hydration streak! Keep up this consistency.`;
+      } else if (query.includes('sleep') || query.includes('night')) {
+        coachResponseText = `Sleep efficiency last night was 88% with total sleep at 7h 42m. In comparison to your sleep target of ${dailySleepTarget}h, you have a sleep debt of 18m. Bioimpedance signals stable sleep latency, but skin temperature was slightly elevated (+0.2°C). I suggest cooling your bedroom by 1°C tonight.`;
+      } else if (query.includes('risk') || query.includes('dehydration') || query.includes('predict')) {
+        coachResponseText = `Hydrax bioimpedance predictions show a ${prediction.riskLevel} dehydration risk. In the next 24 hours, we forecast a stable water balance, provided you consume 350ml in the next hour. Confidence score: ${prediction.confidenceScore}%.`;
+      } else if (query.includes('plan')) {
+        coachResponseText = `Personalized Recovery & Hydration plan for ${dayName}:\n- 08:00 AM: 350ml mineral load (Completed)\n- 12:00 PM: 500ml electrolyte intake\n- 04:00 PM: 350ml recovery prep\n- 08:00 PM: 250ml pre-sleep hydration\nAction: Drink 350ml now to support cell oxygenation during your upcoming active window.`;
+      } else {
+        coachResponseText = `Analyzing telemetry packet for ${dayName}: HR ${currentVitals.heartRate} BPM, HRV ${currentVitals.hrv}ms, skin temp ${currentVitals.skinTemp}°C. Overall body state is stable, continuing your ${currentStreak}-day habit streak. What specific biome or hydration query would you like to parse next?`;
+      }
+    }
+
+    const coachMsgId = 'msg-' + Math.random().toString(36).substring(2, 9);
+    const coachMsg: Message = {
+      id: coachMsgId,
+      sender: 'coach',
+      text: coachResponseText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        return {
+          ...s,
+          messages: [...s.messages, coachMsg]
+        };
+      }
+      return s;
+    }));
+    setIsTyping(false);
+
+    if (autoSpeak) {
+      speakText(coachMsgId, coachResponseText);
+    }
   };
 
   const handleStartNewChat = () => {
@@ -250,7 +430,7 @@ export const AICoachScreen: React.FC = () => {
         >
           <GlassCard style={styles.chatCard}>
             {/* Header */}
-            <View style={[styles.chatHeader, { borderBottomColor: borderCol }]}>
+            <View style={[styles.chatHeader, { borderBottomColor: borderCol, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
               <View style={styles.chatHeaderLeft}>
                 <View style={styles.coachAvatarIcon}>
                   <Sparkles size={16} color="#00E5C3" />
@@ -260,11 +440,16 @@ export const AICoachScreen: React.FC = () => {
                   <Text style={styles.coachStatus}>Real-Time Telemetry Advisor</Text>
                 </View>
               </View>
-              {!isDesktop && (
-                <TouchableOpacity style={styles.mobileNewChatBtn} onPress={handleStartNewChat}>
-                  <Plus size={16} color="#FFFFFF" />
+              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                <TouchableOpacity onPress={handleClearConversation} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', borderWidth: 1, borderColor: borderCol }}>
+                  <Text style={{ color: '#FF4D6D', fontSize: 10, fontWeight: '700' }}>Clear</Text>
                 </TouchableOpacity>
-              )}
+                {!isDesktop && (
+                  <TouchableOpacity style={styles.mobileNewChatBtn} onPress={handleStartNewChat}>
+                    <Plus size={16} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
 
             {/* Scrollable messages area */}
@@ -273,47 +458,60 @@ export const AICoachScreen: React.FC = () => {
               contentContainerStyle={styles.messageList}
               showsVerticalScrollIndicator={false}
             >
-              {activeSession.messages.map((msg) => {
-                const isCoach = msg.sender === 'coach';
-                return (
-                  <View 
-                    key={msg.id}
-                    style={[
-                      styles.messageRow,
-                      isCoach ? styles.coachRowAlign : styles.userRowAlign
-                    ]}
-                  >
-                    {isCoach && (
-                      <View style={styles.msgAvatar}>
-                        <Sparkles size={10} color="#00E5C3" />
-                      </View>
-                    )}
-                    <View style={styles.bubbleContainer}>
-                      <GlassCard 
-                        style={[
-                          styles.messageBubble,
-                          isCoach ? styles.coachBubble : styles.userBubble,
-                          isCoach 
-                            ? { borderColor: darkMode ? 'rgba(0, 229, 195, 0.1)' : '#E2E8F0' } 
-                            : { backgroundColor: '#00E5C3' }
-                        ] as any}
-                      >
-                        <Text style={[styles.messageText, { color: isCoach ? textPrimary : '#050B18' }]}>
-                          {msg.text}
-                        </Text>
-                      </GlassCard>
-                      <View style={[styles.messageFooter, isCoach ? styles.footerLeft : styles.footerRight]}>
-                        <Text style={styles.msgTime}>{msg.timestamp}</Text>
-                        {isCoach && (
-                          <TouchableOpacity onPress={() => speakText(msg.id, msg.text)} style={styles.speakButton}>
-                            <Volume2 size={12} color={isSpeaking === msg.id ? '#00E5C3' : textSecondary} />
-                          </TouchableOpacity>
-                        )}
+              {activeSession.messages.length === 0 ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, paddingHorizontal: 20 }}>
+                  <MessageSquare size={32} color="#00E5C3" style={{ marginBottom: 12, opacity: 0.6 }} />
+                  <Text style={{ color: textPrimary, fontSize: 13, fontWeight: '900', textAlign: 'center' }}>No Messages Yet</Text>
+                  <Text style={{ color: textSecondary, fontSize: 11, textAlign: 'center', marginTop: 4, lineHeight: 16 }}>
+                    Start a conversation with the AI coach. You can ask about your dehydration risk, recovery stats, sleep quality, or log history.
+                  </Text>
+                </View>
+              ) : (
+                activeSession.messages.map((msg) => {
+                  const isCoach = msg.sender === 'coach';
+                  return (
+                    <View 
+                      key={msg.id}
+                      style={[
+                        styles.messageRow,
+                        isCoach ? styles.coachRowAlign : styles.userRowAlign
+                      ]}
+                    >
+                      {isCoach && (
+                        <View style={styles.msgAvatar}>
+                          <Sparkles size={10} color="#00E5C3" />
+                        </View>
+                      )}
+                      <View style={styles.bubbleContainer}>
+                        <GlassCard 
+                          style={[
+                            styles.messageBubble,
+                            isCoach ? styles.coachBubble : styles.userBubble,
+                            isCoach 
+                              ? { borderColor: darkMode ? 'rgba(0, 229, 195, 0.1)' : '#E2E8F0' } 
+                              : { backgroundColor: '#00E5C3' }
+                          ] as any}
+                        >
+                          <Text style={[styles.messageText, { color: isCoach ? textPrimary : '#050B18' }]}>
+                            {msg.text}
+                          </Text>
+                        </GlassCard>
+                        <View style={[styles.messageFooter, isCoach ? styles.footerLeft : styles.footerRight]}>
+                          <Text style={styles.msgTime}>{msg.timestamp}</Text>
+                          {!isCoach && (
+                            <Text style={{ fontSize: 9, color: '#00E5C3', marginLeft: 4 }}>✓✓</Text>
+                          )}
+                          {isCoach && (
+                            <TouchableOpacity onPress={() => speakText(msg.id, msg.text)} style={styles.speakButton}>
+                              <Volume2 size={12} color={isSpeaking === msg.id ? '#00E5C3' : textSecondary} />
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
                     </View>
-                  </View>
-                );
-              })}
+                  );
+                })
+              )}
 
               {isTyping && (
                 <View style={[styles.messageRow, styles.coachRowAlign]}>
@@ -343,18 +541,38 @@ export const AICoachScreen: React.FC = () => {
               </ScrollView>
             </View>
 
-            {/* Chat Input controls */}
+             {/* Chat Input controls */}
             <View style={[styles.inputBarWrapper, { borderTopColor: borderCol }]}>
               <View style={[styles.inputBox, { backgroundColor: inputBg, borderColor: borderCol }]}>
                 <TextInput
                   value={inputText}
                   onChangeText={setInputText}
                   onSubmitEditing={() => handleSendMessage(inputText)}
-                  placeholder="Ask Hydrax..."
+                  placeholder={isListening ? "Listening..." : "Ask Hydrax..."}
                   placeholderTextColor={textSecondary}
                   style={[styles.textInput, { color: textPrimary }]}
+                  editable={!isListening}
                 />
                 
+                {/* Voice Input Mic Button */}
+                <TouchableOpacity
+                  onPress={startVoiceInput}
+                  style={[
+                    styles.micBtn,
+                    {
+                      backgroundColor: isListening ? '#FF4D6D' : 'rgba(255,255,255,0.05)',
+                      marginRight: 8
+                    }
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  {isListening ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Mic size={14} color={darkMode ? '#00E5C3' : '#050B18'} />
+                  )}
+                </TouchableOpacity>
+
                 <TouchableOpacity 
                   onPress={() => handleSendMessage(inputText)}
                   style={[styles.sendBtn, { backgroundColor: inputText.trim() ? '#00E5C3' : 'rgba(255,255,255,0.05)' }]}
@@ -611,6 +829,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,
+  },
+  micBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   rightPanel: {
     width: 250,

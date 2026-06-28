@@ -6,6 +6,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { useVitalsStore } from '../store/useVitalsStore';
 import { useWaterStore } from '../store/useWaterStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
+import { useToastStore } from '../store/useToastStore';
 import { GlassCard } from '../components/GlassCard';
 import { useTranslation } from '../store/i18n';
 import { 
@@ -42,6 +43,7 @@ export const ProfileScreen: React.FC = () => {
   const { recoveryScore } = useDiarrheaStore();
 
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const showToast = useToastStore((state) => state.showToast);
   const styles = getStyles(darkMode);
 
   // Form states
@@ -52,6 +54,8 @@ export const ProfileScreen: React.FC = () => {
   const [gender, setGender] = useState<string>(user?.gender || 'Male');
   const [dob, setDob] = useState<string>(user?.dob || '1998-05-15');
   const [bloodGroup, setBloodGroup] = useState<string>(user?.bloodGroup || 'O+');
+  const [activityLevel, setActivityLevel] = useState<string>(user?.activityLevel || 'medium');
+  const [dailyGoal, setDailyGoal] = useState<string>(dailyWaterTarget ? String(dailyWaterTarget) : '2500');
   const [medicalNotes, setMedicalNotes] = useState<string>(user?.medicalNotes || '');
   const [emergencyName, setEmergencyName] = useState<string>(user?.emergencyContactName || '');
   const [emergencyPhone, setEmergencyPhone] = useState<string>(user?.emergencyContactPhone || '');
@@ -163,8 +167,13 @@ export const ProfileScreen: React.FC = () => {
     const heightNum = parseFloat(height);
 
     if (isNaN(ageNum) || isNaN(weightNum) || isNaN(heightNum)) {
-      Alert.alert('Invalid Input', 'Please enter valid values for age, weight, and height.');
+      showToast('Please enter valid values for age, weight, and height.', 'error');
       return;
+    }
+
+    const goalNum = parseInt(dailyGoal, 10);
+    if (!isNaN(goalNum) && goalNum > 500 && goalNum < 10000) {
+      useWaterStore.getState().setDailyTarget(goalNum);
     }
 
     await updateProfile({
@@ -176,12 +185,13 @@ export const ProfileScreen: React.FC = () => {
       dob,
       bloodGroup,
       medicalNotes,
+      activityLevel: activityLevel as any,
       emergencyContactName: emergencyName,
       emergencyContactPhone: emergencyPhone
     });
 
     setIsEditing(false);
-    Alert.alert('Profile Saved', 'Your bio-intelligence dossier has been updated.');
+    showToast('Bio-intelligence dossier updated!', 'success');
   };
 
   // Profile Photo Upload handling
@@ -189,7 +199,7 @@ export const ProfileScreen: React.FC = () => {
     if (Platform.OS === 'web' && fileInputRef.current) {
       fileInputRef.current.click();
     } else {
-      Alert.alert('Select Photo', 'Upload photo supported in web browser.');
+      showToast('Photo upload is supported on web browsers.', 'error');
     }
   };
 
@@ -197,13 +207,15 @@ export const ProfileScreen: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
-        Alert.alert('File Too Large', 'Please select an image smaller than 2 MB.');
+        showToast('Please select an image smaller than 2 MB.', 'error');
         return;
       }
+      showToast('Processing photo...', 'info');
       const reader = new FileReader();
       reader.onload = async (e: any) => {
         const base64 = e.target.result;
         await updateProfile({ avatar: base64 });
+        showToast('Profile photo updated!', 'success');
       };
       reader.readAsDataURL(file);
     }
@@ -211,6 +223,7 @@ export const ProfileScreen: React.FC = () => {
 
   const handleRemovePhoto = async () => {
     await updateProfile({ avatar: '' });
+    showToast('Profile photo removed.', 'info');
   };
 
   // Profile Completion calculator
@@ -481,6 +494,33 @@ export const ProfileScreen: React.FC = () => {
                     onChangeText={setBloodGroup}
                     editable={isEditing}
                     placeholder="e.g. O+, A-"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
+
+                {/* Field: Activity Level */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Activity Level</Text>
+                  <TextInput 
+                    style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                    value={activityLevel}
+                    onChangeText={setActivityLevel}
+                    editable={isEditing}
+                    placeholder="low, medium, high"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
+
+                {/* Field: Daily Water Goal */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Daily Goal (ml)</Text>
+                  <TextInput 
+                    style={[styles.textInput, { color: darkMode ? '#FFFFFF' : '#0F172A', backgroundColor: darkMode ? '#070D1E' : '#F8FAFC' }]}
+                    value={dailyGoal}
+                    onChangeText={setDailyGoal}
+                    editable={isEditing}
+                    keyboardType="numeric"
+                    placeholder="e.g. 2500"
                     placeholderTextColor="#64748B"
                   />
                 </View>

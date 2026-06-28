@@ -24,11 +24,11 @@ interface BLEState {
 
 export const useBLEStore = create<BLEState>((set, get) => ({
   devices: [],
-  connectedDevice: null,
+  connectedDevice: { id: 'SIMULATED-DEV-001', name: 'Hydrax Wearable (Simulated)' },
   isScanning: false,
-  isStreaming: false,
+  isStreaming: true,
   isDemoMode: true, // Defaults to Demo Mode so the app works out of the box
-  batteryLevel: 85,
+  batteryLevel: 94,
 
   startScan: () => {
     set({ isScanning: true, devices: [] });

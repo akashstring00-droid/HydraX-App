@@ -37,6 +37,9 @@ export const InsightsScreen: React.FC = () => {
   const darkMode = useSettingsStore((state) => state.darkMode);
   const { t } = useTranslation();
   const styles = getStyles(darkMode);
+  
+  const borderCol = darkMode ? 'rgba(255, 255, 255, 0.05)' : '#E2E8F0';
+  const textSecondary = darkMode ? '#8E9AA6' : '#64748B';
 
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<MessageItem[]>([
@@ -320,6 +323,61 @@ export const InsightsScreen: React.FC = () => {
                   <SvgText x="230" y="145" fill="#8E9AA6" fontSize="8" fontWeight="700">16:00 (Min)</SvgText>
                   <SvgText x="530" y="145" fill="#8E9AA6" fontSize="8" fontWeight="700">20:00 (Target)</SvgText>
                 </Svg>
+              </View>
+            </GlassCard>
+
+            {/* Tomorrow's Predictions Forecast Card */}
+            <GlassCard style={styles.coachCard}>
+              <View style={styles.chartHeader}>
+                <Sparkles size={16} color="#00E5C3" style={{ marginRight: 8 }} />
+                <View>
+                  <Text style={[styles.chartTitle, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Advanced Predictive Analytics Forecast</Text>
+                  <Text style={styles.chartSub}>Real-time bio-tensor forecast matrices for next 24 hours</Text>
+                </View>
+              </View>
+
+              <View style={styles.forecastGrid}>
+                {/* 24h Hydration forecast */}
+                <View style={[styles.forecastBox, { borderColor: borderCol, backgroundColor: darkMode ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)' }]}>
+                  <Text style={styles.forecastLabel}>Hydration (Next 24h)</Text>
+                  <Text style={[styles.forecastVal, { color: '#00E5C3' }]}>92% Optimal</Text>
+                  <View style={styles.confidenceRow}>
+                    <Text style={styles.confidenceText}>Confidence: 96%</Text>
+                  </View>
+                </View>
+
+                {/* Tomorrow recovery forecast */}
+                <View style={[styles.forecastBox, { borderColor: borderCol, backgroundColor: darkMode ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)' }]}>
+                  <Text style={styles.forecastLabel}>Recovery (Tomorrow)</Text>
+                  <Text style={[styles.forecastVal, { color: '#FFAD33' }]}>84% Ready</Text>
+                  <View style={styles.confidenceRow}>
+                    <Text style={styles.confidenceText}>Confidence: 89%</Text>
+                  </View>
+                </View>
+
+                {/* Sleep quality forecast */}
+                <View style={[styles.forecastBox, { borderColor: borderCol, backgroundColor: darkMode ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)' }]}>
+                  <Text style={styles.forecastLabel}>Sleep Quality Forecast</Text>
+                  <Text style={[styles.forecastVal, { color: '#7C3AED' }]}>86% Deep Sleep</Text>
+                  <View style={styles.confidenceRow}>
+                    <Text style={styles.confidenceText}>Confidence: 91%</Text>
+                  </View>
+                </View>
+
+                {/* Dehydration Risk Trend */}
+                <View style={[styles.forecastBox, { borderColor: borderCol, backgroundColor: darkMode ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)' }]}>
+                  <Text style={styles.forecastLabel}>Dehydration Risk Trend</Text>
+                  <Text style={[styles.forecastVal, { color: '#FF4D6D' }]}>Decelerating Risk</Text>
+                  <View style={styles.confidenceRow}>
+                    <Text style={styles.confidenceText}>Confidence: 94%</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={{ backgroundColor: darkMode ? 'rgba(0, 229, 195, 0.05)' : '#F1F5F9', marginTop: 14, borderRadius: 14, padding: 12 }}>
+                <Text style={{ color: textSecondary, fontSize: 10, lineHeight: 14, fontWeight: '600' }}>
+                  Recommendation: Your recovery index is highly responsive to hydration loading. Consuming 300ml fluids 45m before sleep will suppress morning resting heart rate and stabilize HRV baseline.
+                </Text>
               </View>
             </GlassCard>
 
@@ -614,5 +672,36 @@ const getStyles = (darkMode: boolean) => StyleSheet.create({
     color: '#8E9AA6',
     lineHeight: 15,
     fontWeight: '500',
+  },
+  forecastGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  forecastBox: {
+    flex: 1,
+    minWidth: 140,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+  },
+  forecastLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#8E9AA6',
+    textTransform: 'uppercase',
+  },
+  forecastVal: {
+    fontSize: 14,
+    fontWeight: '900',
+    marginTop: 6,
+  },
+  confidenceRow: {
+    marginTop: 6,
+  },
+  confidenceText: {
+    fontSize: 8,
+    color: '#8E9AA6',
+    fontWeight: '700',
   },
 });

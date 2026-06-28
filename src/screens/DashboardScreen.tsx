@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, useWindowDimensions, Platform, Animated, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   Bell, 
@@ -26,6 +26,7 @@ import { useWaterStore } from '../store/useWaterStore';
 import { useBLEStore } from '../store/useBLEStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { useToastStore } from '../store/useToastStore';
 
 import { GlassCard } from '../components/GlassCard';
 import { CircularRing } from '../components/CircularRing';
@@ -34,13 +35,38 @@ import { NotificationCenter } from '../components/NotificationCenter';
 
 import Svg, { Path, Circle, Rect, Line, G, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 
+const getGreetingAndSubtitle = (hour: number) => {
+  if (hour >= 5 && hour < 12) {
+    return {
+      greeting: "Good Morning 🌅",
+      subtitle: "Let's keep your hydration optimal today"
+    };
+  } else if (hour >= 12 && hour < 17) {
+    return {
+      greeting: "Good Afternoon ☀️",
+      subtitle: "Your body metrics are progressing well"
+    };
+  } else if (hour >= 17 && hour < 21) {
+    return {
+      greeting: "Good Evening 🌇",
+      subtitle: "Time to review recovery and hydration"
+    };
+  } else {
+    return {
+      greeting: "Good Night 🌙",
+      subtitle: "Prepare for optimal recovery tonight"
+    };
+  }
+};
+
 export const DashboardScreen: React.FC = () => {
   const { width } = useWindowDimensions();
   const { user } = useAuthStore();
-  const { currentVitals, prediction } = useVitalsStore();
+  const { currentVitals, prediction, setVitals, updatePrediction } = useVitalsStore();
   const { currentIntake, dailyWaterTarget, logWater } = useWaterStore();
   const { connectedDevice, batteryLevel } = useBLEStore();
-  const { recoveryScore } = useDiarrheaStore();
+  const { recoveryScore, logs } = useDiarrheaStore();
+  const showToast = useToastStore((state) => state.showToast);
 
   // Theme states
   const darkMode = useSettingsStore((state) => state.darkMode);
@@ -59,8 +85,194 @@ export const DashboardScreen: React.FC = () => {
   const [showSleepModal, setShowSleepModal] = useState(false);
   const [showInsightsModal, setShowInsightsModal] = useState(false);
 
+  const [showCustomWaterModal, setShowCustomWaterModal] = useState(false);
+  const [customWaterAmount, setCustomWaterAmount] = useState('');
+
+  const handleLogCustomWater = () => {
+    const amount = parseInt(customWaterAmount, 10);
+    if (isNaN(amount) || amount <= 0 || amount > 5000) {
+      showToast('Please enter a valid amount (1 - 5000ml).', 'error');
+      return;
+    }
+    handleLogWater(amount);
+    setShowCustomWaterModal(false);
+    setCustomWaterAmount('');
+  };
+
+  useEffect(() => {
+    const activeDiarrheaLogs = logs.filter(log => {
+      const hoursAgo = (new Date().getTime() - new Date(log.timestamp).getTime()) / (1000 * 60 * 60);
+      return hoursAgo < 24;
+    });
+    const totalFluidLoss = activeDiarrheaLogs.reduce((sum, log) => sum + log.fluidLossEstimate, 0);
+    const hydrationDepletionRate = 20;
+    const diarrheaPenalty = totalFluidLoss / 30;
+    const intakeRatio = currentIntake / dailyWaterTarget;
+    const dehydrationPercent = Math.min(95, Math.max(2, Math.round(hydrationDepletionRate + diarrheaPenalty - (intakeRatio * 15))));
+    const hydrationScore = 100 - dehydrationPercent;
+
+    let riskLevel: 'Low' | 'Medium' | 'High' = 'Low';
+    if (hydrationScore < 70) {
+      riskLevel = 'High';
+    } else if (hydrationScore < 85) {
+      riskLevel = 'Medium';
+    }
+
+    const recommendations = [...prediction.recommendations];
+    if (riskLevel === 'High') {
+      recommendations[0] = 'Critical: Hydration is low. Drink 500ml of electrolytes immediately.';
+    } else if (riskLevel === 'Medium') {
+      recommendations[0] = 'Action: Hydration dropping. Drink 300ml water in the next 30 mins.';
+    } else {
+      recommendations[0] = 'Hydration levels are optimal. Great job staying hydrated!';
+    }
+
+    updatePrediction({
+      ...prediction,
+      dehydrationPercent,
+      hydrationScore,
+      riskLevel,
+      recommendations
+    });
+  }, [currentIntake, dailyWaterTarget, logs]);
+
+  const [greetingInfo, setGreetingInfo] = useState(() => {
+    const curHour = new Date().getHours();
+    return getGreetingAndSubtitle(curHour);
+  });
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const checkGreeting = () => {
+      const curHour = new Date().getHours();
+      const nextInfo = getGreetingAndSubtitle(curHour);
+      if (nextInfo.greeting !== greetingInfo.greeting) {
+        Animated.sequence([
+          Animated.timing(fadeAnim, {
+            toValue: 0.1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ]).start();
+
+        setTimeout(() => {
+          setGreetingInfo(nextInfo);
+        }, 300);
+      }
+    };
+
+    const interval = setInterval(checkGreeting, 10000);
+    return () => clearInterval(interval);
+  }, [greetingInfo.greeting]);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const isDesktop = width >= 768;
-  const quickLogAmounts = [250, 350, 500];
+  const quickLogAmounts = [100, 250, 500];
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    // Simulate updating vitals slightly
+    const hrOffset = Math.random() > 0.5 ? 2 : -2;
+    const hrvOffset = Math.random() > 0.5 ? 3 : -3;
+    const newHR = Math.max(60, Math.min(100, (currentVitals.heartRate || 72) + hrOffset));
+    const newHRV = Math.max(45, Math.min(90, (currentVitals.hrv || 60) + hrvOffset));
+    const newTemp = Math.max(36.0, Math.min(37.2, (currentVitals.skinTemp || 36.6) + (Math.random() > 0.5 ? 0.1 : -0.1)));
+    
+    // update store
+    setVitals({
+      heartRate: newHR,
+      hrv: newHRV,
+      skinTemp: Number(newTemp.toFixed(1)),
+    });
+
+    // recalculate hydration
+    const activeDiarrheaLogs = logs.filter(log => {
+      const hoursAgo = (new Date().getTime() - new Date(log.timestamp).getTime()) / (1000 * 60 * 60);
+      return hoursAgo < 24;
+    });
+    const totalFluidLoss = activeDiarrheaLogs.reduce((sum, log) => sum + log.fluidLossEstimate, 0);
+    const hydrationDepletionRate = 20;
+    const diarrheaPenalty = totalFluidLoss / 30;
+    const intakeRatio = currentIntake / dailyWaterTarget;
+    const dehydrationPercent = Math.min(95, Math.max(2, Math.round(hydrationDepletionRate + diarrheaPenalty - (intakeRatio * 15))));
+    const hydrationScore = 100 - dehydrationPercent;
+
+    let riskLevel: 'Low' | 'Medium' | 'High' = 'Low';
+    if (hydrationScore < 70) {
+      riskLevel = 'High';
+    } else if (hydrationScore < 85) {
+      riskLevel = 'Medium';
+    }
+
+    updatePrediction({
+      ...prediction,
+      dehydrationPercent,
+      hydrationScore,
+      riskLevel,
+    });
+
+    setTimeout(() => {
+      setIsRefreshing(false);
+      showToast('Health data synchronized and trend recalculated.', 'info');
+    }, 800);
+  };
+
+  const handleLogWater = (amount: number) => {
+    logWater(amount);
+    
+    // Instantly calculate and update prediction
+    const activeDiarrheaLogs = logs.filter(log => {
+      const hoursAgo = (new Date().getTime() - new Date(log.timestamp).getTime()) / (1000 * 60 * 60);
+      return hoursAgo < 24;
+    });
+    const totalFluidLoss = activeDiarrheaLogs.reduce((sum, log) => sum + log.fluidLossEstimate, 0);
+    const hydrationDepletionRate = 20;
+    const diarrheaPenalty = totalFluidLoss / 30;
+    const newIntake = currentIntake + amount;
+    const intakeRatio = newIntake / dailyWaterTarget;
+    const dehydrationPercent = Math.min(95, Math.max(2, Math.round(hydrationDepletionRate + diarrheaPenalty - (intakeRatio * 15))));
+    const hydrationScore = 100 - dehydrationPercent;
+    
+    let riskLevel: 'Low' | 'Medium' | 'High' = 'Low';
+    if (hydrationScore < 70) {
+      riskLevel = 'High';
+    } else if (hydrationScore < 85) {
+      riskLevel = 'Medium';
+    }
+    
+    const recommendations = [...prediction.recommendations];
+    if (riskLevel === 'High') {
+      recommendations[0] = 'Critical: Hydration is low. Drink 500ml of electrolytes immediately.';
+    } else if (riskLevel === 'Medium') {
+      recommendations[0] = 'Action: Hydration dropping. Drink 300ml water in the next 30 mins.';
+    } else {
+      recommendations[0] = 'Hydration levels are optimal. Great job staying hydrated!';
+    }
+    
+    updatePrediction({
+      ...prediction,
+      dehydrationPercent,
+      hydrationScore,
+      riskLevel,
+      recommendations
+    });
+    
+    showToast(`Logged +${amount}ml water!`, 'success');
+  };
+
+  // Auto refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      handleRefresh();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [currentVitals, logs, currentIntake, dailyWaterTarget]);
 
   const handleTriggerEmergencySMS = () => {
     setEmergencySMSState('sending');
@@ -76,6 +288,19 @@ export const DashboardScreen: React.FC = () => {
   const sweatLoss = Math.round(currentVitals.motion * 800) || 800;
   const bowelLoss = 100; // Mock base loss
   const netBalance = totalIntake - (sweatLoss + bowelLoss);
+
+  // Dynamic Trends & Statuses
+  const diffHydra = prediction.hydrationScore - 93;
+  const hydrationTrendText = diffHydra >= 0 ? `↗ ${diffHydra}% vs yesterday` : `↘ ${Math.abs(diffHydra)}% vs yesterday`;
+  const hydrationStatusText = prediction.hydrationScore >= 85 ? '• Optimal' : prediction.hydrationScore >= 70 ? '• Warning' : '• Dehydrated';
+
+  const diffHR = (currentVitals.heartRate || 72) - 70;
+  const hrTrendText = diffHR >= 0 ? `↗ ${diffHR} bpm vs yesterday` : `↘ ${Math.abs(diffHR)} bpm vs yesterday`;
+  const hrStatusText = (currentVitals.heartRate || 72) <= 80 ? 'Normal Range' : 'Elevated';
+
+  const diffRec = recoveryScore - 78;
+  const recoveryTrendText = diffRec >= 0 ? `↗ ${diffRec}% vs yesterday` : `↘ ${Math.abs(diffRec)}% vs yesterday`;
+  const recoveryStatusText = recoveryScore >= 80 ? 'Good Recovery' : recoveryScore >= 50 ? 'Moderate Recovery' : 'Needs Rest';
 
   // SVG Donut Segment Drawer Helper
   const drawDonutSegment = (
@@ -125,10 +350,10 @@ export const DashboardScreen: React.FC = () => {
         
         {/* Top Header Section */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greetingText}>Good Morning, {user?.displayName || 'Akash'} 👋</Text>
-            <Text style={styles.subtitleText}>Here's your health overview for today</Text>
-          </View>
+          <Animated.View style={{ opacity: fadeAnim }}>
+            <Text style={styles.greetingText}>{greetingInfo.greeting.split(' ')[0]} {greetingInfo.greeting.split(' ')[1] || ''}, {user?.displayName || 'Akash'} {greetingInfo.greeting.split(' ')[2] || ''}</Text>
+            <Text style={styles.subtitleText}>{greetingInfo.subtitle}</Text>
+          </Animated.View>
           
           <View style={styles.headerRightRow}>
             {/* Connection badge */}
@@ -148,6 +373,16 @@ export const DashboardScreen: React.FC = () => {
               ) : (
                 <Moon size={16} color="#0F172A" />
               )}
+            </TouchableOpacity>
+
+            {/* Refresh Button */}
+            <TouchableOpacity 
+              style={styles.bellBtn} 
+              onPress={handleRefresh}
+              activeOpacity={0.7}
+              disabled={isRefreshing}
+            >
+              <RefreshCw size={14} color={darkMode ? '#FFFFFF' : '#0F172A'} />
             </TouchableOpacity>
 
             {/* Notification bell */}
@@ -201,24 +436,24 @@ export const DashboardScreen: React.FC = () => {
         {/* Hero Section: Grid of 4 Vitals Cards */}
         <View style={isDesktop ? styles.heroRowDesktop : styles.heroGridMobile}>
           
-          {/* Card 1: Hydration Level */}
+          {/* Card 1: Hydration Level (Daily Progress) */}
           <GlassCard style={isDesktop ? styles.heroCardDesktop : styles.heroCardMobile}>
             <View style={styles.heroCardContent}>
               <View style={styles.heroCardLeft}>
                 <View style={styles.cardHeaderRow}>
                   <Droplet size={14} color="#00E5C3" fill="#00E5C3" style={{ marginRight: 6 }} />
-                  <Text style={styles.heroCardTitle}>Hydration Level</Text>
+                  <Text style={styles.heroCardTitle}>Daily Progress</Text>
                 </View>
-                <Text style={[styles.heroCardValue, { color: '#00E5C3' }]}>{prediction.hydrationScore}%</Text>
-                <Text style={styles.heroCardStatus}>• Optimal</Text>
-                <Text style={[styles.heroCardTrend, { color: '#00E5C3' }]}>↗ 8% vs yesterday</Text>
+                <Text style={[styles.heroCardValue, { color: '#00E5C3' }]}>{currentIntake} ml</Text>
+                <Text style={styles.heroCardSubStatus}>Target: {dailyWaterTarget} ml</Text>
+                <Text style={[styles.heroCardTrend, { color: '#00E5C3' }]}>Remaining: {Math.max(0, dailyWaterTarget - currentIntake)} ml</Text>
               </View>
               <View style={styles.heroCardRight}>
                 <CircularRing
                   size={64}
                   strokeWidth={5}
-                  value={prediction.hydrationScore}
-                  label={`${prediction.hydrationScore}%`}
+                  value={Math.round(Math.min(100, (currentIntake / dailyWaterTarget) * 100))}
+                  label={`${Math.round(Math.min(100, (currentIntake / dailyWaterTarget) * 100))}%`}
                   subtitle=""
                   gradientColors={['#00E5C3', '#00FFB2']}
                   glowColor="#00E5C3"
@@ -270,8 +505,8 @@ export const DashboardScreen: React.FC = () => {
                   <Text style={styles.heroCardTitle}>Heart Rate</Text>
                 </View>
                 <Text style={[styles.heroCardValue, { color: '#FF4D6D' }]}>{currentVitals.heartRate} BPM</Text>
-                <Text style={styles.heroCardSubStatus}>Normal Range</Text>
-                <Text style={[styles.heroCardTrend, { color: '#FF4D6D' }]}>↗ 5 bpm vs yesterday</Text>
+                <Text style={styles.heroCardSubStatus}>{hrStatusText}</Text>
+                <Text style={[styles.heroCardTrend, { color: '#FF4D6D' }]}>{hrTrendText}</Text>
               </View>
               <View style={styles.heroCardRight}>
                 <CircularRing
@@ -297,8 +532,8 @@ export const DashboardScreen: React.FC = () => {
                   <Text style={styles.heroCardTitle}>Recovery Score</Text>
                 </View>
                 <Text style={[styles.heroCardValue, { color: '#C084FC' }]}>{recoveryScore}%</Text>
-                <Text style={styles.heroCardSubStatus}>Good Recovery</Text>
-                <Text style={[styles.heroCardTrend, { color: '#C084FC' }]}>↗ 6% vs yesterday</Text>
+                <Text style={styles.heroCardSubStatus}>{recoveryStatusText}</Text>
+                <Text style={[styles.heroCardTrend, { color: '#C084FC' }]}>{recoveryTrendText}</Text>
               </View>
               <View style={styles.heroCardRight}>
                 <CircularRing
@@ -347,9 +582,14 @@ export const DashboardScreen: React.FC = () => {
                 const graphWidth = chartWidth - paddingLeft - 16;
                 const graphHeight = chartHeight - paddingBottom - 10;
 
+                const todayPct = Math.round(Math.min(100, (currentIntake / dailyWaterTarget) * 100));
                 const points = hydrationTimeframe === '7 Days'
-                  ? [85, 83, 89, 92, 91, 93, 95]
-                  : [80, 82, 81, 84, 83, 85, 86, 84, 87, 85, 88, 86, 89, 87, 90, 89, 91, 88, 92, 90, 93, 91, 94, 92, 95, 93, 96, 94, 96, 95];
+                  ? [65, 75, 82, 70, 90, 85, todayPct]
+                  : [
+                      60, 62, 65, 70, 68, 72, 75, 73, 78, 80, 
+                      82, 79, 83, 85, 81, 84, 87, 89, 86, 88, 
+                      90, 87, 89, 91, 92, 88, 93, 90, 89, todayPct
+                    ];
                 const xSpacing = graphWidth / (points.length - 1);
                 
                 let linePath = '';
@@ -580,12 +820,20 @@ export const DashboardScreen: React.FC = () => {
                 {quickLogAmounts.map((amount) => (
                   <TouchableOpacity
                     key={amount}
-                    onPress={() => logWater(amount)}
+                    onPress={() => handleLogWater(amount)}
                     style={[styles.logChip, { backgroundColor: logChipBg, borderColor: logChipBorder }]}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.logChipText}>+{amount}ml</Text>
                   </TouchableOpacity>
                 ))}
+                <TouchableOpacity
+                  onPress={() => setShowCustomWaterModal(true)}
+                  style={[styles.logChip, { backgroundColor: logChipBg, borderColor: logChipBorder }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.logChipText}>+Custom</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </GlassCard>
@@ -658,7 +906,7 @@ export const DashboardScreen: React.FC = () => {
           <GlassCard style={isDesktop ? styles.chartCardColumn : styles.chartCardMobile}>
             <View style={styles.cardHeaderLabelRow}>
               <Moon size={14} color="#7C3AED" style={{ marginRight: 8 }} />
-              <Text style={styles.analyticsCardTitle}>Sleep Analysis (WHOOP Style)</Text>
+              <Text style={styles.analyticsCardTitle}>Sleep Analysis</Text>
             </View>
 
             <View style={styles.donutContainerRow}>
@@ -731,56 +979,44 @@ export const DashboardScreen: React.FC = () => {
             </View>
 
             <View style={styles.recommendationList}>
-              {/* Rec 1 */}
-              <TouchableOpacity 
-                style={styles.recItem} 
-                activeOpacity={0.7}
-                onPress={() => setShowFluidModal(true)}
-              >
-                <View style={styles.recLeftRow}>
-                  <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(0, 229, 195, 0.08)' }]}>
-                    <Droplet size={12} color="#00E5C3" fill="#00E5C3" />
-                  </View>
-                  <Text style={styles.recText} numberOfLines={2}>
-                    Great hydration! Keep maintaining your fluid intake.
-                  </Text>
-                </View>
-                <ChevronRight size={12} color={textSecondary} />
-              </TouchableOpacity>
+              {prediction.recommendations.map((rec, index) => {
+                let iconColor = "#00E5C3";
+                let iconBg = "rgba(0, 229, 195, 0.08)";
+                let RecIcon = Droplet;
 
-              {/* Rec 2 */}
-              <TouchableOpacity 
-                style={styles.recItem} 
-                activeOpacity={0.7}
-                onPress={() => setShowInsightsModal(true)}
-              >
-                <View style={styles.recLeftRow}>
-                  <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(20, 184, 255, 0.08)' }]}>
-                    <TrendingUp size={12} color="#14B8FF" />
-                  </View>
-                  <Text style={styles.recText} numberOfLines={2}>
-                    Recovery is trending up. Excellent consistency.
-                  </Text>
-                </View>
-                <ChevronRight size={12} color={textSecondary} />
-              </TouchableOpacity>
+                if (index === 1) {
+                  iconColor = "#14B8FF";
+                  iconBg = "rgba(20, 184, 255, 0.08)";
+                  RecIcon = TrendingUp;
+                } else if (index > 1) {
+                  iconColor = "#7C3AED";
+                  iconBg = "rgba(124, 58, 237, 0.08)";
+                  RecIcon = Moon;
+                }
 
-              {/* Rec 3 */}
-              <TouchableOpacity 
-                style={styles.recItem} 
-                activeOpacity={0.7}
-                onPress={() => setShowSleepModal(true)}
-              >
-                <View style={styles.recLeftRow}>
-                  <View style={[styles.recIconWrapper, { backgroundColor: 'rgba(124, 58, 237, 0.08)' }]}>
-                    <Moon size={12} color="#7C3AED" />
-                  </View>
-                  <Text style={styles.recText} numberOfLines={2}>
-                    Try to reduce late-night screen time for sleep.
-                  </Text>
-                </View>
-                <ChevronRight size={12} color={textSecondary} />
-              </TouchableOpacity>
+                return (
+                  <TouchableOpacity 
+                    key={index}
+                    style={styles.recItem} 
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (index === 0) setShowFluidModal(true);
+                      else if (index === 1) setShowInsightsModal(true);
+                      else setShowSleepModal(true);
+                    }}
+                  >
+                    <View style={styles.recLeftRow}>
+                      <View style={[styles.recIconWrapper, { backgroundColor: iconBg }]}>
+                        <RecIcon size={12} color={iconColor} fill={RecIcon === Droplet ? iconColor : undefined} />
+                      </View>
+                      <Text style={styles.recText} numberOfLines={2}>
+                        {rec}
+                      </Text>
+                    </View>
+                    <ChevronRight size={12} color={textSecondary} />
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <TouchableOpacity 
@@ -1062,6 +1298,80 @@ export const DashboardScreen: React.FC = () => {
                 </View>
               </View>
             </ScrollView>
+          </GlassCard>
+        </View>
+      )}
+
+      {/* Custom Water Intake Log Modal Overlay */}
+      {showCustomWaterModal && (
+        <View style={StyleSheet.absoluteFill} className="bg-black/90 z-50 items-center justify-center p-6">
+          <GlassCard style={styles.modalCard} className="w-full max-w-sm border-[#00E5C3]/30 bg-[#050B18]/95 p-5">
+            {/* Modal Header */}
+            <View style={styles.modalHeaderRow}>
+              <View style={styles.modalHeaderTitleRow}>
+                <Droplet size={18} color="#00E5C3" fill="#00E5C3" style={{ marginRight: 8 }} />
+                <Text style={[styles.modalTitle, { color: '#FFFFFF' }]}>Log Custom Intake</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowCustomWaterModal(false);
+                  setCustomWaterAmount('');
+                }}
+                style={styles.modalCloseBtn}
+              >
+                <X size={14} color="#8E9AA6" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ marginVertical: 12, gap: 8 }}>
+              <Text style={{ color: darkMode ? '#8E9AA6' : '#64748B', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 }}>Amount in Milliliters (ml)</Text>
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: 14,
+                height: 44,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: darkMode ? 'rgba(255, 255, 255, 0.05)' : '#E2E8F0',
+                backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.02)' : '#FFFFFF'
+              }}>
+                <TextInput
+                  style={{
+                    flex: 1,
+                    fontSize: 13,
+                    fontWeight: '600',
+                    color: darkMode ? '#FFFFFF' : '#0F172A',
+                    padding: 0
+                  }}
+                  placeholder="e.g. 350"
+                  placeholderTextColor={darkMode ? '#8E9AA6' : '#64748B'}
+                  value={customWaterAmount}
+                  onChangeText={setCustomWaterAmount}
+                  keyboardType="numeric"
+                  autoFocus
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={{
+                height: 48,
+                borderRadius: 16,
+                backgroundColor: '#00E5C3',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginTop: 8,
+                shadowColor: '#00E5C3',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.2,
+                shadowRadius: 8,
+                elevation: 4
+              }}
+              onPress={handleLogCustomWater}
+            >
+              <Text style={{ color: '#050B18', fontSize: 14, fontWeight: '900' }}>Add Intake</Text>
+            </TouchableOpacity>
           </GlassCard>
         </View>
       )}

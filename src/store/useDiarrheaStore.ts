@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { supabase } from '../lib/supabase';
+import { useAuthStore } from './useAuthStore';
 
 export interface DiarrheaLog {
   id: string;
@@ -11,13 +13,16 @@ export interface DiarrheaLog {
   bloodInStool: boolean;
   fluidLossEstimate: number; // in ml, estimated based on stoolType and frequency
   severity: 'Mild' | 'Moderate' | 'Severe';
+  notes?: string;
 }
 
 interface DiarrheaState {
   logs: DiarrheaLog[];
   recoveryScore: number; // 0 to 100
-  logSymptoms: (log: Omit<DiarrheaLog, 'id' | 'timestamp' | 'fluidLossEstimate' | 'severity'>) => void;
-  deleteLog: (id: string) => void;
+  logSymptoms: (log: Omit<DiarrheaLog, 'id' | 'timestamp' | 'fluidLossEstimate' | 'severity'>) => Promise<void>;
+  deleteLog: (id: string) => Promise<void>;
+  editLog: (id: string, updatedSymptoms: Partial<Omit<DiarrheaLog, 'id' | 'timestamp' | 'fluidLossEstimate' | 'severity'>>) => Promise<void>;
+  loadJournalLogs: () => Promise<void>;
   calculateRecoveryScore: () => void;
 }
 
@@ -112,7 +117,42 @@ export const useDiarrheaStore = create<DiarrheaState>((set, get) => ({
   logs: initialState.logs,
   recoveryScore: initialState.recoveryScore,
 
-  logSymptoms: (symptoms) => {
+  loadJournalLogs: async () => {
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from('journal_logs')
+        .select('*')
+        .eq('user_id', user.uid)
+        .order('timestamp', { ascending: false });
+
+      if (error) throw new Error(error.message);
+
+      if (data) {
+        const formattedLogs = data.map((d: any) => ({
+          id: d.id,
+          timestamp: d.timestamp,
+          stoolType: d.stool_type,
+          frequency: d.frequency,
+          cramping: d.cramping,
+          fever: d.fever,
+          nausea: d.nausea,
+          bloodInStool: d.blood_in_stool,
+          fluidLossEstimate: d.fluid_loss_estimate,
+          severity: d.severity,
+          notes: d.notes
+        }));
+        set({ logs: formattedLogs });
+        saveState({ logs: formattedLogs });
+        get().calculateRecoveryScore();
+      }
+    } catch (e) {
+      console.warn('Failed to load journal logs from Supabase:', e);
+    }
+  },
+
+  logSymptoms: async (symptoms) => {
     const fluidLossEstimate = symptoms.frequency * (symptoms.stoolType >= 6 ? 250 : 100);
     
     let severity: 'Mild' | 'Moderate' | 'Severe' = 'Mild';
@@ -130,6 +170,32 @@ export const useDiarrheaStore = create<DiarrheaState>((set, get) => ({
       ...symptoms
     };
 
+    const user = useAuthStore.getState().user;
+    if (user) {
+      try {
+        const { data, error } = await supabase.from('journal_logs').insert({
+          user_id: user.uid,
+          stool_type: symptoms.stoolType,
+          frequency: symptoms.frequency,
+          cramping: symptoms.cramping,
+          fever: symptoms.fever,
+          nausea: symptoms.nausea,
+          blood_in_stool: symptoms.bloodInStool,
+          fluid_loss_estimate: fluidLossEstimate,
+          severity,
+          notes: symptoms.notes ?? '',
+          timestamp: newLog.timestamp
+        }).select();
+
+        if (error) throw new Error(error.message);
+        if (data && data[0]) {
+          newLog.id = data[0].id;
+        }
+      } catch (e) {
+        console.warn('Supabase journal logs insert failed:', e);
+      }
+    }
+
     const updatedLogs = [newLog, ...get().logs];
     set({ logs: updatedLogs });
     saveState({ logs: updatedLogs });
@@ -137,8 +203,63 @@ export const useDiarrheaStore = create<DiarrheaState>((set, get) => ({
     get().calculateRecoveryScore();
   },
 
-  deleteLog: (id) => {
+  deleteLog: async (id) => {
+    try {
+      const { error } = await supabase.from('journal_logs').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+    } catch (e) {
+      console.warn('Supabase delete journal log failed:', e);
+    }
+
     const updatedLogs = get().logs.filter((log) => log.id !== id);
+    set({ logs: updatedLogs });
+    saveState({ logs: updatedLogs });
+
+    get().calculateRecoveryScore();
+  },
+
+  editLog: async (id, updatedSymptoms) => {
+    const logs = get().logs;
+    const logIndex = logs.findIndex((log) => log.id === id);
+    if (logIndex === -1) return;
+
+    const existingLog = logs[logIndex];
+    const merged = { ...existingLog, ...updatedSymptoms };
+
+    const fluidLossEstimate = merged.frequency * (merged.stoolType >= 6 ? 250 : 100);
+    let severity: 'Mild' | 'Moderate' | 'Severe' = 'Mild';
+    if (merged.frequency > 5 || merged.cramping === 'Severe' || merged.bloodInStool || merged.fever) {
+      severity = 'Severe';
+    } else if (merged.frequency >= 3 || merged.cramping === 'Moderate' || merged.nausea) {
+      severity = 'Moderate';
+    }
+
+    try {
+      const { error } = await supabase.from('journal_logs').update({
+        stool_type: merged.stoolType,
+        frequency: merged.frequency,
+        cramping: merged.cramping,
+        fever: merged.fever,
+        nausea: merged.nausea,
+        blood_in_stool: merged.bloodInStool,
+        fluid_loss_estimate: fluidLossEstimate,
+        severity,
+        notes: merged.notes ?? ''
+      }).eq('id', id);
+      if (error) throw new Error(error.message);
+    } catch (e) {
+      console.warn('Supabase update journal log failed:', e);
+    }
+
+    const updatedLog: DiarrheaLog = {
+      ...merged,
+      fluidLossEstimate,
+      severity
+    };
+
+    const updatedLogs = [...logs];
+    updatedLogs[logIndex] = updatedLog;
+
     set({ logs: updatedLogs });
     saveState({ logs: updatedLogs });
 

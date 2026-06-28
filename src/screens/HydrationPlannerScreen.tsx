@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, useWindowDimensions, Platform, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   Sparkles, 
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react-native';
 import { useWaterStore } from '../store/useWaterStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { useToastStore } from '../store/useToastStore';
+import { useGoalsStore } from '../store/useGoalsStore';
 import { GlassCard } from '../components/GlassCard';
 import Svg, { Circle, Line, Text as SvgText, Path, G, Rect } from 'react-native-svg';
 
@@ -25,7 +27,17 @@ export const HydrationPlannerScreen: React.FC = () => {
   const darkMode = useSettingsStore((state) => state.darkMode);
 
   // Water Store
-  const { currentIntake, dailyWaterTarget, logWater } = useWaterStore();
+  const { 
+    currentIntake, 
+    dailyWaterTarget, 
+    logWater, 
+    setDailyTarget, 
+    remindersEnabled, 
+    reminderInterval, 
+    toggleReminders, 
+    setReminderInterval 
+  } = useWaterStore();
+  const showToast = useToastStore((state) => state.showToast);
 
   // Inputs state
   const [age, setAge] = useState('26');
@@ -36,7 +48,9 @@ export const HydrationPlannerScreen: React.FC = () => {
   const [customAmount, setCustomAmount] = useState('');
 
   const [calculatedGoal, setCalculatedGoal] = useState(dailyWaterTarget);
-  const [streakDays, setStreakDays] = useState(7);
+  
+  // Goals & Streak Store bindings
+  const { currentStreak, badges: storeBadges } = useGoalsStore();
 
   // Recalculate daily water goal based on inputs
   useEffect(() => {
@@ -57,35 +71,44 @@ export const HydrationPlannerScreen: React.FC = () => {
   }, [weight, weatherTemp, activityHrs]);
 
   const handleApplyCalculatedGoal = () => {
-    // We can update the store's target. Since the store might not have setDailyWaterTarget directly, 
-    // we can use it locally or check if the store allows it. 
-    // In our store, dailyWaterTarget is currently 2500. Let's make sure it updates or fallback to local variable.
-    // For local display, we use calculatedGoal as target.
+    setDailyTarget(calculatedGoal);
+    showToast(`Daily water target updated to ${calculatedGoal}ml!`, 'success');
   };
 
   const handleQuickAdd = (amount: number) => {
     logWater(amount);
+    showToast(`Logged +${amount}ml water!`, 'success');
   };
 
   const handleCustomAdd = () => {
     const amt = parseInt(customAmount);
     if (amt > 0) {
       logWater(amt);
+      showToast(`Logged +${amt}ml water!`, 'success');
       setCustomAmount('');
+    } else {
+      showToast('Please enter a valid amount.', 'error');
     }
   };
 
-  // Gamification badges
-  const badges = [
-    { name: 'Hydro Elite', desc: 'Met target 7 days straight', earned: true, icon: Flame, color: '#FFAD33' },
-    { name: 'Morning Loader', desc: 'Hydrated before 9:00 AM', earned: true, icon: ShieldCheck, color: '#00E5C3' },
-    { name: 'Climate Shield', desc: 'Adjusted target for high temp', earned: true, icon: CloudSun, color: '#14B8FF' },
-    { name: 'Vitals Aligned', desc: 'HRV baseline stabilized', earned: false, icon: Award, color: '#7C3AED' }
-  ];
+  // Gamification badge helpers
+  const getBadgeIcon = (iconName: string) => {
+    if (iconName === 'Flame') return Flame;
+    if (iconName === 'Award') return Award;
+    if (iconName === 'Moon') return ShieldCheck;
+    return Sparkles;
+  };
+
+  const getTierColor = (tier: string) => {
+    if (tier === 'platinum') return '#E5E7EB';
+    if (tier === 'gold') return '#FFD700';
+    if (tier === 'silver') return '#C0C0C0';
+    return '#CD7F32';
+  };
 
   // Progress Calculations
-  const progressPercent = Math.min(100, Math.round((currentIntake / calculatedGoal) * 100));
-  const remaining = Math.max(0, calculatedGoal - currentIntake);
+  const progressPercent = Math.min(100, Math.round((currentIntake / (dailyWaterTarget || 2500)) * 100));
+  const remaining = Math.max(0, (dailyWaterTarget || 2500) - currentIntake);
 
   // SVG circle progress
   const radius = 55;
@@ -110,7 +133,7 @@ export const HydrationPlannerScreen: React.FC = () => {
           </View>
           <View style={styles.streakWrapper}>
             <Flame size={16} color="#FFAD33" fill="#FFAD33" />
-            <Text style={[styles.streakText, { color: '#FFAD33' }]}>{streakDays} Day Streak</Text>
+            <Text style={[styles.streakText, { color: '#FFAD33' }]}>{currentStreak} Day Streak</Text>
           </View>
         </View>
 
@@ -143,10 +166,14 @@ export const HydrationPlannerScreen: React.FC = () => {
                 ))}
               </View>
 
-              <View style={[styles.calculatedCard, { backgroundColor: darkMode ? 'rgba(20, 184, 255, 0.05)' : '#F1F5F9' }]}>
-                <Text style={styles.calcLabel}>Calculated Daily Fluid Goal</Text>
+              <TouchableOpacity 
+                onPress={handleApplyCalculatedGoal}
+                style={[styles.calculatedCard, { backgroundColor: darkMode ? 'rgba(20, 184, 255, 0.08)' : '#F1F5F9', borderStyle: 'dashed', borderWidth: 1, borderColor: '#14B8FF' }]}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.calcLabel}>Calculated Daily Fluid Goal (Click to Apply)</Text>
                 <Text style={[styles.calcValue, { color: '#14B8FF' }]}>{calculatedGoal} ml</Text>
-              </View>
+              </TouchableOpacity>
             </GlassCard>
 
             {/* Quick Add Intake */}
@@ -185,6 +212,56 @@ export const HydrationPlannerScreen: React.FC = () => {
                   <Text style={styles.customAddText}>Log</Text>
                 </TouchableOpacity>
               </View>
+            </GlassCard>
+
+            {/* Reminder Scheduling Card */}
+            <GlassCard style={{ padding: 20, borderRadius: 24, marginBottom: 20 }} borderColor={borderCol}>
+              <Text style={styles.sectionLabel}>Reminder Scheduling</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: textPrimary }}>Intake Reminders</Text>
+                  <Text style={{ fontSize: 10, color: textSecondary }}>Receive desktop notifications to sip water</Text>
+                </View>
+                <Switch
+                  value={remindersEnabled}
+                  onValueChange={() => {
+                    toggleReminders();
+                    showToast(remindersEnabled ? "Intake reminders deactivated." : "Intake reminders activated!", "success");
+                  }}
+                  trackColor={{ false: '#3A506B', true: '#00E5C3' }}
+                  thumbColor={remindersEnabled ? '#FFFFFF' : '#8E9AA6'}
+                />
+              </View>
+              
+              {remindersEnabled && (
+                <View>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: textSecondary, marginBottom: 8 }}>REMINDER INTERVAL</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {([30, 60, 120] as const).map((interval) => (
+                      <TouchableOpacity
+                        key={interval}
+                        onPress={() => {
+                          setReminderInterval(interval);
+                          showToast(`Reminder interval set to ${interval} minutes.`, 'success');
+                        }}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 10,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: reminderInterval === interval ? '#00E5C3' : borderCol,
+                          backgroundColor: reminderInterval === interval ? 'rgba(0,229,195,0.08)' : 'transparent',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: reminderInterval === interval ? '#00E5C3' : textSecondary }}>
+                          {interval} min
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
             </GlassCard>
           </View>
 
@@ -318,26 +395,27 @@ export const HydrationPlannerScreen: React.FC = () => {
             <GlassCard style={styles.badgesCard} borderColor={borderCol}>
               <Text style={styles.sectionLabel}>Streaks & Badges Achievements</Text>
               <View style={styles.badgesGrid}>
-                {badges.map((b, idx) => {
-                  const Icon = b.icon;
+                {storeBadges.map((b) => {
+                  const Icon = getBadgeIcon(b.iconName);
+                  const badgeColor = getTierColor(b.tier);
                   return (
                     <View 
-                      key={idx} 
+                      key={b.id} 
                       style={[
                         styles.badgeItem, 
                         { 
                           borderColor: borderCol, 
-                          opacity: b.earned ? 1 : 0.4,
+                          opacity: 1,
                           backgroundColor: darkMode ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)'
                         }
                       ]}
                     >
-                      <View style={[styles.badgeIconContainer, { backgroundColor: b.color + '15' }]}>
-                        <Icon size={16} color={b.color} />
+                      <View style={[styles.badgeIconContainer, { backgroundColor: badgeColor + '15' }]}>
+                        <Icon size={16} color={badgeColor} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.badgeName, { color: textPrimary }]}>{b.name}</Text>
-                        <Text style={styles.badgeDesc}>{b.desc}</Text>
+                        <Text style={styles.badgeDesc}>{b.description}</Text>
                       </View>
                     </View>
                   );

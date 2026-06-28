@@ -19,6 +19,7 @@ import { useVitalsStore } from '../store/useVitalsStore';
 import { useWaterStore } from '../store/useWaterStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { useToastStore } from '../store/useToastStore';
 import { GlassCard } from '../components/GlassCard';
 import Svg, { Circle, Rect, Line, G, Text as SvgText, Path } from 'react-native-svg';
 
@@ -51,28 +52,43 @@ export const RecoveryPlannerScreen: React.FC = () => {
     { id: '6', timeOfDay: 'Evening', text: 'Disconnect screens 1 hour before sleep', completed: false }
   ];
 
+  const showToast = useToastStore((state) => state.showToast);
+
   const [planItems, setPlanItems] = useState<PlanItem[]>(initialPlan);
 
   const handleToggleItem = (id: string) => {
-    setPlanItems(prev => prev.map(item => 
-      item.id === id ? { ...item, completed: !item.completed } : item
-    ));
+    let newlyCompleted = false;
+    setPlanItems(prev => prev.map(item => {
+      if (item.id === id) {
+        newlyCompleted = !item.completed;
+        return { ...item, completed: newlyCompleted };
+      }
+      return item;
+    }));
+    
+    // Defer toast so state updates first
+    setTimeout(() => {
+      showToast(newlyCompleted ? "Action completed!" : "Action incomplete.", "info");
+    }, 50);
   };
 
   const handleGeneratePlan = () => {
     setIsLoading(true);
+    showToast("Generating dynamic recovery plan...", "info");
     setTimeout(() => {
       setIsLoading(false);
       setExpectedTomorrow(Math.min(98, Math.round(recoveryScore + 5 + Math.random() * 5)));
       setPlanItems(prev => prev.map(item => ({ ...item, completed: false })));
+      showToast("Dynamic recovery plan generated!", "success");
     }, 1500);
   };
 
   const handleExportPDF = () => {
+    showToast("Preparing PDF export...", "info");
     if (typeof window !== 'undefined') {
       window.print();
     } else {
-      alert("PDF Export is available on web browsers via window.print()");
+      showToast("PDF Export is available on web browsers.", "error");
     }
   };
 
@@ -82,10 +98,59 @@ export const RecoveryPlannerScreen: React.FC = () => {
   // Core metrics factors list
   const factors = [
     { name: 'Sleep', score: 88, status: 'Optimal', icon: Moon, color: '#7C3AED' },
-    { name: 'Hydration', score: Math.round((currentIntake / dailyWaterTarget) * 100), status: currentIntake >= dailyWaterTarget ? 'Optimal' : 'Needs Hydration', icon: Droplet, color: '#14B8FF' },
-    { name: 'HRV', score: Math.min(100, Math.round((currentVitals.hrv / 85) * 100)), status: 'Balanced', icon: Heart, color: '#FF4D6D' },
+    { name: 'Hydration', score: Math.round((currentIntake / (dailyWaterTarget || 2500)) * 100), status: currentIntake >= dailyWaterTarget ? 'Optimal' : 'Needs Hydration', icon: Droplet, color: '#14B8FF' },
+    { name: 'HRV', score: Math.min(100, Math.round(((currentVitals.hrv || 60) / 85) * 100)), status: 'Balanced', icon: Heart, color: '#FF4D6D' },
     { name: 'Stress', score: 78, status: 'Low', icon: Smile, color: '#00E5C3' },
-    { name: 'Activity', score: Math.round(currentVitals.motion * 100), status: 'Active', icon: Activity, color: '#FFAD33' }
+    { name: 'Activity', score: Math.round((currentVitals.motion || 0.1) * 100), status: 'Active', icon: Activity, color: '#FFAD33' }
+  ];
+
+  const getAdaptiveRecommendation = () => {
+    if (prediction.riskLevel === 'High') {
+      return {
+        title: 'Critical Dehydration Penalty',
+        desc: 'Optical sensors indicate extracellular fluid suppression. Prioritize electrolyte load (+500ml) immediately. Suspend intense workouts.',
+        color: '#FF4D6D'
+      };
+    }
+    if ((currentVitals.hrv || 60) < 55) {
+      return {
+        title: 'Parasympathetic Fatigue',
+        desc: `Your HRV is suppressed at ${currentVitals.hrv || 60}ms. We recommend adding a diaphragmatic breathing session and going to bed 30 minutes earlier tonight.`,
+        color: '#7C3AED'
+      };
+    }
+    if (recoveryScore < 70) {
+      return {
+        title: 'Increased Autonomic Strain',
+        desc: 'Gut irritation or fluid loss is putting extra strain on your system. Keep physical load light and increase water sipping frequency.',
+        color: '#FFAD33'
+      };
+    }
+    return {
+      title: 'Peak Recovery Capacity',
+      desc: 'All physiological indicators are green. Your body is ready for high physical today.',
+      color: '#00E5C3'
+    };
+  };
+
+  const activeRec = getAdaptiveRecommendation();
+
+  // Recovery Calendar (Simulated past 14 days)
+  const calendarDays = [
+    { day: '28', score: 85 },
+    { day: '29', score: 92 },
+    { day: '30', score: 78 },
+    { day: '31', score: 62 },
+    { day: '1', score: 54 },
+    { day: '2', score: 79 },
+    { day: '3', score: 88 },
+    { day: '4', score: 91 },
+    { day: '5', score: 73 },
+    { day: '6', score: 68 },
+    { day: '7', score: 84 },
+    { day: '8', score: 90 },
+    { day: '9', score: 77 },
+    { day: '10', score: recoveryScore }, // Today
   ];
 
   // SVG Circular progress configs
@@ -204,6 +269,36 @@ export const RecoveryPlannerScreen: React.FC = () => {
                 );
               })}
             </GlassCard>
+
+            {/* Recovery Calendar Grid */}
+            <GlassCard style={{ padding: 18, borderRadius: 24, marginBottom: 20 }} borderColor={borderCol}>
+              <Text style={styles.sectionLabel}>Recovery History Calendar</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginTop: 8 }}>
+                {calendarDays.map((d, idx) => {
+                  const isOptimal = d.score >= 80;
+                  const isWarning = d.score >= 60 && d.score < 80;
+                  const scoreColor = isOptimal ? '#00E5C3' : isWarning ? '#FFAD33' : '#FF4D6D';
+                  
+                  return (
+                    <View key={idx} style={{ alignItems: 'center', width: '12%', minWidth: 32, marginBottom: 8 }}>
+                      <Text style={{ fontSize: 8, fontWeight: '700', color: textSecondary, marginBottom: 4 }}>{d.day}</Text>
+                      <View style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        backgroundColor: scoreColor + '15',
+                        borderColor: scoreColor,
+                        borderWidth: 1,
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }}>
+                        <Text style={{ fontSize: 9, fontWeight: '900', color: scoreColor }}>{d.score}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </GlassCard>
           </View>
 
           {/* COLUMN 2: Today's Recovery Plan */}
@@ -263,6 +358,18 @@ export const RecoveryPlannerScreen: React.FC = () => {
                   </View>
                 );
               })}
+            </GlassCard>
+
+            {/* Adaptive Bio-Recommendation */}
+            <GlassCard style={{ padding: 18, borderRadius: 24, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: activeRec.color }} borderColor={borderCol}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Sparkles size={14} color={activeRec.color} />
+                <Text style={{ fontSize: 10, fontWeight: '900', color: activeRec.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Adaptive Bio-Recommendation
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: textPrimary, marginBottom: 4 }}>{activeRec.title}</Text>
+              <Text style={{ fontSize: 11, color: textSecondary, lineHeight: 16 }}>{activeRec.desc}</Text>
             </GlassCard>
 
             {/* Recovery Timeline Charts */}

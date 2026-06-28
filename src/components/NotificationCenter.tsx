@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, Dimensions, useWindowDimensions, Platform } from 'react-native';
-import { X, CheckCheck, AlertCircle, Info, ShieldAlert, Check } from 'lucide-react-native';
+import { X, CheckCheck, AlertCircle, Info, ShieldAlert, Check, Bell, BellOff, Clock } from 'lucide-react-native';
 import { useSettingsStore, NotificationItem } from '../store/useSettingsStore';
 import { GlassCard } from './GlassCard';
 import { useTranslation } from '../store/i18n';
@@ -11,7 +11,7 @@ interface NotificationCenterProps {
 }
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({ visible, onClose }) => {
-  const { notifications, markNotificationRead, clearNotifications } = useSettingsStore();
+  const { notifications, markNotificationRead, clearNotifications, muteNotifications, toggleMuteNotifications, snoozeNotification } = useSettingsStore();
   const darkMode = useSettingsStore((state) => state.darkMode);
   const { t } = useTranslation();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -61,6 +61,18 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ visible,
   const isDesktop = windowWidth >= 768;
   const drawerWidth = isDesktop ? 360 : windowWidth;
 
+  // Filter out notifications that are currently snoozed
+  const now = new Date();
+  const activeNotifications = notifications.filter((item) => {
+    if (item.snoozedUntil) {
+      const snoozedDate = new Date(item.snoozedUntil);
+      if (snoozedDate > now) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   return (
     <View style={[styles.overlay, { width: windowWidth, height: windowHeight }]} pointerEvents={visible ? 'auto' : 'none'}>
       {/* Background Dimmer Backdrop */}
@@ -101,17 +113,39 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ visible,
               <Text style={[styles.actionText, { color: '#FF4D6D' }]}>Clear All</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Mute Notifications Toggle */}
+          <View style={[styles.muteRow, { borderTopColor: darkMode ? 'rgba(255, 255, 255, 0.05)' : '#E2E8F0', borderTopWidth: 1, paddingTop: 10, marginTop: 10 }]}>
+            <View style={styles.muteRowLeft}>
+              {muteNotifications ? (
+                <BellOff size={16} color="#FF4D6D" style={{ marginRight: 8 }} />
+              ) : (
+                <Bell size={16} color="#00E5C3" style={{ marginRight: 8 }} />
+              )}
+              <Text style={[styles.muteText, { color: darkMode ? '#FFFFFF' : '#0F172A' }]}>Mute Alerts</Text>
+            </View>
+            <TouchableOpacity 
+              onPress={toggleMuteNotifications} 
+              style={[
+                styles.muteSwitch, 
+                { backgroundColor: muteNotifications ? '#FF4D6D' : (darkMode ? 'rgba(255,255,255,0.08)' : '#E2E8F0') }
+              ]}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.muteSwitchKnob, { alignSelf: muteNotifications ? 'flex-end' : 'flex-start' }]} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Scroll Notifications List */}
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {notifications.length === 0 ? (
+          {activeNotifications.length === 0 ? (
             <View style={styles.emptyState}>
               <AlertCircle size={40} color={darkMode ? '#1E293B' : '#E2E8F0'} strokeWidth={1.5} />
               <Text style={[styles.emptyText, { color: darkMode ? '#8E9AA6' : '#64748B' }]}>No active notifications</Text>
             </View>
           ) : (
-            notifications.map((item) => (
+            activeNotifications.map((item) => (
               <GlassCard 
                 key={item.id} 
                 style={[
@@ -151,6 +185,26 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ visible,
                   <Text style={[styles.cardMessage, { color: darkMode ? '#8E9AA6' : '#64748B' }]}>
                     {item.message}
                   </Text>
+
+                  {/* Snooze action buttons for warning and critical messages */}
+                  {(item.type === 'warning' || item.type === 'critical') && !item.read && (
+                    <View style={styles.cardActions}>
+                      <TouchableOpacity 
+                        style={[styles.snoozeBtn, { borderColor: darkMode ? 'rgba(255,255,255,0.08)' : '#E2E8F0' }]} 
+                        onPress={() => snoozeNotification(item.id, 30)}
+                      >
+                        <Clock size={12} color="#00E5C3" style={{ marginRight: 4 }} />
+                        <Text style={styles.snoozeText}>Snooze 30m</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[styles.snoozeBtn, { borderColor: darkMode ? 'rgba(255,255,255,0.08)' : '#E2E8F0' }]} 
+                        onPress={() => snoozeNotification(item.id, 60)}
+                      >
+                        <Clock size={12} color="#00E5C3" style={{ marginRight: 4 }} />
+                        <Text style={styles.snoozeText}>Snooze 1h</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
 
                   {!item.read && (
                     <View style={styles.unreadDot} />
@@ -223,6 +277,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#00E5C3',
   },
+  muteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  muteRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  muteText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  muteSwitch: {
+    width: 38,
+    height: 22,
+    borderRadius: 11,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  muteSwitchKnob: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+  },
   listContent: {
     padding: 16,
     paddingBottom: 40,
@@ -276,6 +356,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '500',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    marginTop: 10,
+  },
+  snoozeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  snoozeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#00E5C3',
   },
   unreadDot: {
     position: 'absolute',

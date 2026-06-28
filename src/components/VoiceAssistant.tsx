@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, TextInput, Platform, ActivityIndicator } from 'react-native';
-import { Mic, MicOff, X, Sparkles, Volume2, Send } from 'lucide-react-native';
+import { Mic, MicOff, X, Sparkles, Volume2, Send, Radio, Headphones } from 'lucide-react-native';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useVitalsStore } from '../store/useVitalsStore';
 import { useWaterStore } from '../store/useWaterStore';
+import { useDiarrheaStore } from '../store/useDiarrheaStore';
 import { GlassCard } from './GlassCard';
 
 interface VoiceAssistantProps {
@@ -17,12 +18,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onNavigate }) =>
   // Vitals stats context
   const { currentVitals, prediction } = useVitalsStore();
   const { currentIntake, dailyWaterTarget } = useWaterStore();
+  const { recoveryScore } = useDiarrheaStore();
 
   const [isOpen, setIsOpen] = useState(false);
   const [statusText, setStatusText] = useState('Click micro to speak...');
   const [typedCommand, setTypedCommand] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [handsFreeMode, setHandsFreeMode] = useState(false);
 
   // Animation refs
   const waveAnim1 = useRef(new Animated.Value(1)).current;
@@ -69,7 +72,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onNavigate }) =>
         recognitionRef.current = recognition;
       }
     }
-  }, []);
+  }, [handsFreeMode, isOpen]); // Rebind to access updated handsFreeMode in speech hooks if needed
 
   const startWaveAnimations = () => {
     Animated.loop(
@@ -133,46 +136,69 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onNavigate }) =>
 
     let speakResponse = '';
 
-    if (cmd.includes('hydration') || cmd.includes('water') || cmd.includes('drink')) {
+    // Advanced Command Parsers
+    if (cmd.includes('how hydrated') || cmd.includes('hydration score') || cmd === 'how hydrated am i') {
+      speakResponse = `You are currently ${100 - prediction.dehydrationPercent}% hydrated. Your total water intake today is ${currentIntake} ml against your goal of ${dailyWaterTarget} ml. Dehydration risk is ${prediction.riskLevel}.`;
+    } else if (cmd.includes('create recovery') || cmd.includes('recovery plan') || cmd.includes('plan recovery')) {
+      setActiveTab('recoveryPlanner');
+      speakResponse = `Navigating to recovery planner. I am analyzing your HRV baseline of ${currentVitals.hrv} milliseconds to generate your recovery plan.`;
+      setTimeout(() => handleClose(), 2500);
+    } else if (cmd.includes('generate report') || cmd.includes('create report') || cmd.includes('weekly report')) {
+      setActiveTab('weeklyReports');
+      speakResponse = `Opening weekly report center. Fetching your optical telemetry biometrics to generate your weekly wellness audit.`;
+      setTimeout(() => handleClose(), 2500);
+    } else if (cmd.includes('hydration') || cmd.includes('water') || cmd.includes('drink')) {
       if (cmd.includes('planner') || cmd.includes('show') || cmd.includes('open')) {
         setActiveTab('hydrationPlanner');
         speakResponse = "Opening hydration planner screen.";
-        setTimeout(() => setIsOpen(false), 800);
+        setTimeout(() => handleClose(), 2000);
       } else {
-        speakResponse = `Your current hydration score is ${100 - prediction.dehydrationPercent}%. Daily intake logged is ${currentIntake} ml against a target of ${dailyWaterTarget} ml.`;
+        speakResponse = `Your daily fluid intake is ${currentIntake} ml against a target of ${dailyWaterTarget} ml. Dehydration probability stands at ${prediction.dehydrationPercent}%.`;
       }
     } else if (cmd.includes('recovery')) {
       setActiveTab('recoveryPlanner');
-      speakResponse = "Navigating to recovery planner dashboard.";
-      setTimeout(() => setIsOpen(false), 800);
+      speakResponse = `Navigating to recovery planner dashboard. Your current gut recovery index is ${recoveryScore} percent.`;
+      setTimeout(() => handleClose(), 2000);
     } else if (cmd.includes('report') || cmd.includes('weekly')) {
       setActiveTab('weeklyReports');
       speakResponse = "Opening Weekly Report Center.";
-      setTimeout(() => setIsOpen(false), 800);
+      setTimeout(() => handleClose(), 2000);
     } else if (cmd.includes('settings')) {
       setActiveTab('settings');
       speakResponse = "Opening System Settings.";
-      setTimeout(() => setIsOpen(false), 800);
+      setTimeout(() => handleClose(), 2000);
     } else if (cmd.includes('profile')) {
       setActiveTab('profile');
-      speakResponse = "Opening Profile Dossier.";
-      setTimeout(() => setIsOpen(false), 800);
+      speakResponse = "Opening Profile Setup.";
+      setTimeout(() => handleClose(), 2000);
     } else if (cmd.includes('band') || cmd.includes('manager') || cmd.includes('device')) {
       setActiveTab('device');
       speakResponse = "Opening band connection settings.";
-      setTimeout(() => setIsOpen(false), 800);
+      setTimeout(() => handleClose(), 2000);
     } else if (cmd.includes('coach')) {
       setActiveTab('aiCoach');
       speakResponse = "Opening AI Coach chat interface.";
-      setTimeout(() => setIsOpen(false), 800);
+      setTimeout(() => handleClose(), 2000);
+    } else if (cmd.includes('timeline') || cmd.includes('history') || cmd.includes('logs')) {
+      setActiveTab('timeline');
+      speakResponse = "Opening Health Timeline chronological logs.";
+      setTimeout(() => handleClose(), 2000);
+    } else if (cmd.includes('export') || cmd.includes('center')) {
+      setActiveTab('exportCenter');
+      speakResponse = "Opening Export Center compiler.";
+      setTimeout(() => handleClose(), 2000);
+    } else if (cmd.includes('emergency') || cmd.includes('sos')) {
+      setActiveTab('emergencyMode');
+      speakResponse = "Entering Emergency Safety Mode.";
+      setTimeout(() => handleClose(), 2000);
     } else if (cmd.includes('dashboard') || cmd.includes('home')) {
       setActiveTab('dashboard');
       speakResponse = "Returning to main dashboard.";
-      setTimeout(() => setIsOpen(false), 800);
+      setTimeout(() => handleClose(), 2000);
     } else if (cmd.includes('how am i') || cmd.includes('status')) {
       speakResponse = `You are doing well today. Heart rate is stable at ${currentVitals.heartRate} BPM, and dehydration risk is low at ${prediction.dehydrationPercent}% probability.`;
     } else {
-      speakResponse = `I received command: "${command}". I can navigate to hydration, recovery, report center, coach, or settings.`;
+      speakResponse = `Understood. Processing command: "${command}". How else can I assist your health OS?`;
     }
 
     setStatusText(speakResponse);
@@ -183,8 +209,26 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onNavigate }) =>
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
+      
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        startWaveAnimations();
+      };
+      
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        stopWaveAnimations();
+        
+        // Auto-listening hands-free mechanism
+        if (handsFreeMode && isOpen) {
+          setTimeout(() => {
+            if (recognitionRef.current && !isListening) {
+              recognitionRef.current.start();
+            }
+          }, 600);
+        }
+      };
+      
       window.speechSynthesis.speak(utterance);
     }
   };
@@ -211,6 +255,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onNavigate }) =>
   const textSecondary = darkMode ? '#8E9AA6' : '#64748B';
   const inputBg = darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)';
   const borderCol = darkMode ? 'rgba(255, 255, 255, 0.05)' : '#E2E8F0';
+
+  // Dynamic wave color mapping
+  const waveColor = isListening 
+    ? '#FF4D6D' // Red Alert Listening
+    : (isSpeaking ? '#00E5C3' : '#14B8FF'); // Green Speaking / Blue Idle
 
   return (
     <>
@@ -241,11 +290,31 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onNavigate }) =>
               </TouchableOpacity>
             </View>
 
+            {/* Hands-Free Toggle Mode */}
+            <View style={styles.handsFreeRow}>
+              <View style={styles.handsFreeLeft}>
+                <Headphones size={14} color={handsFreeMode ? '#00E5C3' : textSecondary} style={{ marginRight: 8 }} />
+                <Text style={[styles.handsFreeLabel, { color: textPrimary }]}>Hands-Free Auto-Listening</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setHandsFreeMode(!handsFreeMode);
+                  setStatusText(!handsFreeMode ? 'Hands-Free active. Speak your command...' : 'Hands-Free disabled.');
+                }}
+                style={[
+                  styles.handsFreeSwitch,
+                  { backgroundColor: handsFreeMode ? '#00E5C3' : (darkMode ? 'rgba(255,255,255,0.08)' : '#E2E8F0') }
+                ]}
+              >
+                <View style={[styles.switchKnob, { alignSelf: handsFreeMode ? 'flex-end' : 'flex-start' }]} />
+              </TouchableOpacity>
+            </View>
+
             {/* Listening Wave Animations */}
             <View style={styles.wavesContainer}>
-              <Animated.View style={[styles.waveCircle, { transform: [{ scale: waveAnim1 }], opacity: isListening ? 0.3 : 0.05 }]} />
-              <Animated.View style={[styles.waveCircle, styles.waveCircleMid, { transform: [{ scale: waveAnim2 }], opacity: isListening ? 0.2 : 0.03 }]} />
-              <Animated.View style={[styles.waveCircle, styles.waveCircleOuter, { transform: [{ scale: waveAnim3 }], opacity: isListening ? 0.15 : 0.02 }]} />
+              <Animated.View style={[styles.waveCircle, { transform: [{ scale: waveAnim1 }], opacity: (isListening || isSpeaking) ? 0.3 : 0.05, backgroundColor: waveColor }]} />
+              <Animated.View style={[styles.waveCircle, styles.waveCircleMid, { transform: [{ scale: waveAnim2 }], opacity: (isListening || isSpeaking) ? 0.2 : 0.03, backgroundColor: waveColor }]} />
+              <Animated.View style={[styles.waveCircle, styles.waveCircleOuter, { transform: [{ scale: waveAnim3 }], opacity: (isListening || isSpeaking) ? 0.15 : 0.02, backgroundColor: waveColor }]} />
               
               <TouchableOpacity
                 onPress={toggleSpeechListening}
@@ -273,9 +342,30 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onNavigate }) =>
               </View>
             )}
 
-            <Text style={styles.commandsHelper}>
-              Try saying: "open recovery planner" | "how am I today?" | "open settings"
-            </Text>
+            {/* Open Coach Chat button */}
+            <TouchableOpacity 
+              onPress={() => {
+                setActiveTab('aiCoach');
+                setIsOpen(false);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingVertical: 10,
+                paddingHorizontal: 12,
+                borderRadius: 12,
+                backgroundColor: 'rgba(0, 229, 195, 0.1)',
+                borderWidth: 1,
+                borderColor: 'rgba(0, 229, 195, 0.25)',
+                marginVertical: 12,
+                width: '100%'
+              }}
+              activeOpacity={0.7}
+            >
+              <Sparkles size={14} color="#00E5C3" style={{ marginRight: 6 }} />
+              <Text style={{ color: '#00E5C3', fontSize: 11, fontWeight: '800' }}>Open AI Coach Chat Interface</Text>
+            </TouchableOpacity>
 
             {/* Fallback Keyboard input */}
             <View style={[styles.inputWrapper, { borderTopColor: borderCol }]}>
@@ -359,7 +449,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   headerTitleRow: {
     flexDirection: 'row',
@@ -372,25 +462,54 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 6,
   },
+  handsFreeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  handsFreeLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  handsFreeLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  handsFreeSwitch: {
+    width: 34,
+    height: 18,
+    borderRadius: 9,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  switchKnob: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#FFFFFF',
+  },
   wavesContainer: {
-    width: 140,
-    height: 140,
+    width: 120,
+    height: 120,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 20,
+    marginVertical: 14,
   },
   waveCircle: {
     position: 'absolute',
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#00E5C3',
   },
   waveCircleMid: {
-    backgroundColor: '#14B8FF',
+    // scale offset is managed by animations
   },
   waveCircleOuter: {
-    backgroundColor: '#7C3AED',
+    // scale offset is managed by animations
   },
   centerMicBtn: {
     width: 56,
@@ -408,7 +527,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     textAlign: 'center',
-    marginVertical: 10,
+    marginVertical: 6,
     paddingHorizontal: 16,
     lineHeight: 18,
   },
@@ -427,13 +546,13 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: '600',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 14,
     paddingHorizontal: 20,
   },
   inputWrapper: {
     width: '100%',
     borderTopWidth: 1,
-    paddingTop: 16,
+    paddingTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
   },
