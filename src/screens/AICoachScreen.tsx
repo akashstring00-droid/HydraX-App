@@ -24,22 +24,9 @@ import { useToastStore } from '../store/useToastStore';
 import { useGoalsStore } from '../store/useGoalsStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { GlassCard } from '../components/GlassCard';
+import { supabase } from '../lib/supabase';
 
 const STORAGE_KEY = 'hydrax-ai-sessions';
-
-const loadSavedSessions = (defaultSessions: ChatSession[]) => {
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Failed to load AI sessions', e);
-    }
-  }
-  return defaultSessions;
-};
 
 interface Message {
   id: string;
@@ -55,6 +42,100 @@ interface ChatSession {
   messages: Message[];
 }
 
+const MarkdownRenderer: React.FC<{ text: string; color: string; darkMode: boolean }> = ({ text, color, darkMode }) => {
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  const borderCol = darkMode ? 'rgba(255, 255, 255, 0.05)' : '#E2E8F0';
+  const codeBg = darkMode ? '#0F172A' : '#F1F5F9';
+
+  return (
+    <View style={{ gap: 4 }}>
+      {parts.map((part, idx) => {
+        if (part.startsWith('```') && part.endsWith('```')) {
+          const lines = part.slice(3, -3).trim().split('\n');
+          const firstLine = lines[0].toLowerCase();
+          const isKnownLang = ['javascript', 'typescript', 'python', 'html', 'css', 'json', 'sql', 'bash', 'react'].includes(firstLine);
+          const lang = isKnownLang ? firstLine : '';
+          const code = isKnownLang ? lines.slice(1).join('\n') : lines.join('\n');
+
+          return (
+            <View key={idx} style={{ backgroundColor: codeBg, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: borderCol, marginVertical: 4 }}>
+              {lang ? (
+                <Text style={{ fontSize: 9, fontWeight: '800', color: '#00E5C3', marginBottom: 4, textTransform: 'uppercase', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+                  {lang}
+                </Text>
+              ) : null}
+              <Text style={{ fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 11, color: darkMode ? '#E5E7EB' : '#1E293B', lineHeight: 15 }}>
+                {code}
+              </Text>
+            </View>
+          );
+        }
+
+        const lineItems = part.split('\n');
+        return (
+          <View key={idx}>
+            {lineItems.map((line, lIdx) => {
+              const isBullet = line.trim().startsWith('* ') || line.trim().startsWith('- ');
+              const isNumbered = /^\d+\.\s/.test(line.trim());
+              
+              let displayText = line;
+              if (isBullet) {
+                displayText = line.trim().replace(/^[\*\-]\s+/, '');
+              } else if (isNumbered) {
+                displayText = line.trim().replace(/^\d+\.\s+/, '');
+              }
+
+              const boldParts = displayText.split(/(\*\*.*?\*\*)/g);
+              const renderedLine = boldParts.map((boldPart, bIdx) => {
+                if (boldPart.startsWith('**') && boldPart.endsWith('**')) {
+                  return (
+                    <Text key={bIdx} style={{ fontWeight: '800', color }}>
+                      {boldPart.slice(2, -2)}
+                    </Text>
+                  );
+                }
+                return boldPart;
+              });
+
+              if (isBullet) {
+                return (
+                  <View key={lIdx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2, paddingLeft: 8 }}>
+                    <Text style={{ color: '#00E5C3', marginRight: 6, fontSize: 12 }}>•</Text>
+                    <Text style={{ flex: 1, fontSize: 12, fontWeight: '500', color, lineHeight: 17 }}>
+                      {renderedLine}
+                    </Text>
+                  </View>
+                );
+              }
+
+              if (isNumbered) {
+                const numMatch = line.trim().match(/^(\d+)\.\s/);
+                const num = numMatch ? numMatch[1] : '1';
+                return (
+                  <View key={lIdx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginVertical: 2, paddingLeft: 8 }}>
+                    <Text style={{ color: '#00E5C3', marginRight: 6, fontSize: 11, fontWeight: '800' }}>{num}.</Text>
+                    <Text style={{ flex: 1, fontSize: 12, fontWeight: '500', color, lineHeight: 17 }}>
+                      {renderedLine}
+                    </Text>
+                  </View>
+                );
+              }
+
+              if (!line.trim()) return <View key={lIdx} style={{ height: 6 }} />;
+
+              return (
+                <Text key={lIdx} style={{ fontSize: 12, fontWeight: '500', color, lineHeight: 17, marginVertical: 2 }}>
+                  {renderedLine}
+                </Text>
+              );
+            })}
+          </View>
+        );
+      })}
+    </View>
+  );
+};
+
 export const AICoachScreen: React.FC = () => {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
@@ -62,52 +143,384 @@ export const AICoachScreen: React.FC = () => {
 
   // Vitals Context
   const { currentVitals, prediction } = useVitalsStore();
-  const { currentIntake, dailyWaterTarget } = useWaterStore();
-  const { recoveryScore } = useDiarrheaStore();
+  const { currentIntake, dailyWaterTarget, logs: waterLogs } = useWaterStore();
+  const { recoveryScore, logs: symptomLogs } = useDiarrheaStore();
   const { currentStreak, dailySleepTarget } = useGoalsStore();
+  const user = useAuthStore((state) => state.user);
+  const showToast = useToastStore((state) => state.showToast);
 
-  const mockSessions: ChatSession[] = [
+  const defaultGreeting = "Hello! I am your HydraX AI Coach, powered by Llama 3.3. I analyze your heart rate, sleep quality, gut logs, and hydration targets to assist you. Ask me anything!";
+
+  const initialSessions: ChatSession[] = [
     {
-      id: 'session-1',
-      title: 'Hydration & Dehydration Risk',
-      date: 'Today, 10:24 AM',
+      id: 'session-default',
+      title: 'Hydration & Bio-Analytics',
+      date: 'Today',
       messages: [
-        { id: '1', sender: 'coach', text: 'Hello! I am your Hydrax AI Bio-Intelligence Advisor. I analyze your real-time optical band telemetry, hydration logs, and physiological trends. How can I assist you today?', timestamp: '10:24 AM' },
-        { id: '2', sender: 'user', text: 'Analyze my dehydration risk.', timestamp: '10:25 AM' },
-        { id: '3', sender: 'coach', text: `Currently, your estimated Dehydration Risk is Low. Your current fluid intake sits at ${currentIntake}ml against a target of ${dailyWaterTarget}ml. Optical metrics show stable bioimpedance. Keep sipping fluids at 15-minute intervals.`, timestamp: '10:25 AM' }
-      ]
-    },
-    {
-      id: 'session-2',
-      title: 'Low Recovery Analysis',
-      date: 'Yesterday, 4:15 PM',
-      messages: [
-        { id: '1', sender: 'coach', text: 'Welcome back. Telemetry indicates elevated recovery scores. Let\'s evaluate sleep parameters.', timestamp: '4:15 PM' },
-        { id: '2', sender: 'user', text: 'Why is my recovery low?', timestamp: '4:16 PM' },
-        { id: '3', sender: 'coach', text: `Your low recovery values correlate with a sleep score of 88/100 and an HRV of ${currentVitals.hrv}ms. HRV suppression is typically driven by dehydration and autonomic fatigue. I recommend a water intake boost (+350ml) and a 10-minute breathwork session.`, timestamp: '4:17 PM' }
+        { id: 'msg-greet', sender: 'coach', text: defaultGreeting, timestamp: 'Just Now' }
       ]
     }
   ];
 
-  const [sessions, setSessions] = useState<ChatSession[]>(mockSessions);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>('session-1');
+  const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
+  const [selectedSessionId, setSelectedSessionId] = useState<string>('session-default');
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [shouldAutoSpeak, setShouldAutoSpeak] = useState(false);
-  const showToast = useToastStore((state) => state.showToast);
 
-  const activeSession = sessions.find(s => s.id === selectedSessionId) || sessions[0];
+  const abortControllerRef = useRef<AbortController | null>(null);
   const chatScrollRef = useRef<ScrollView>(null);
+  const activeSession = sessions.find(s => s.id === selectedSessionId) || sessions[0];
 
   const suggestionPrompts = [
     'How much water should I drink?',
     'Why am I tired?',
     'Recovery suggestions',
-    'Suggest hydration plan',
-    'Predict dehydration risk'
+    'Explain my Dehydration Risk',
+    'Write a python script for steps counter'
   ];
+
+  // Load chat sessions from Supabase on user changes
+  useEffect(() => {
+    const fetchSupabaseSessions = async () => {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase
+          .from('chat_sessions')
+          .select('*')
+          .eq('user_id', user.uid)
+          .order('updated_at', { ascending: false });
+
+        if (data && data.length > 0) {
+          setSessions(data.map((d: any) => ({
+            id: d.id,
+            title: d.title,
+            date: d.date,
+            messages: d.messages || []
+          })));
+          setSelectedSessionId(data[0].id);
+        }
+      } catch (e) {
+        console.warn('Failed to retrieve chat sessions from Supabase', e);
+      }
+    };
+    fetchSupabaseSessions();
+  }, [user]);
+
+  // Save active session to Supabase when it updates
+  const syncSessionToSupabase = async (session: ChatSession) => {
+    if (!user) return;
+    try {
+      await supabase.from('chat_sessions').upsert({
+        id: session.id,
+        user_id: user.uid,
+        title: session.title,
+        date: session.date,
+        messages: session.messages,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Failed to upsert chat session to Supabase', e);
+    }
+  };
+
+  const handleClearConversation = () => {
+    const updated = sessions.map(s => {
+      if (s.id === selectedSessionId) {
+        const cleared = { ...s, messages: [] };
+        syncSessionToSupabase(cleared);
+        return cleared;
+      }
+      return s;
+    });
+    setSessions(updated);
+    showToast('Conversation cleared.', 'info');
+  };
+
+  const handleStopGenerating = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsGenerating(false);
+    setIsTyping(false);
+  };
+
+  const handleStartNewChat = () => {
+    const newId = 'session-' + Math.random().toString(36).substring(2, 9);
+    const newSession: ChatSession = {
+      id: newId,
+      title: 'New Coach Conversation',
+      date: new Date().toLocaleDateString(),
+      messages: [
+        { id: 'greet-' + newId, sender: 'coach', text: defaultGreeting, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+      ]
+    };
+    const updated = [newSession, ...sessions];
+    setSessions(updated);
+    setSelectedSessionId(newId);
+    syncSessionToSupabase(newSession);
+    showToast('New chat session created.', 'success');
+  };
+
+  const updateActiveMessageText = (msgId: string, text: string) => {
+    setSessions(prev => prev.map(s => {
+      if (s.id === selectedSessionId) {
+        const updatedMessages = s.messages.map(m => m.id === msgId ? { ...m, text } : m);
+        const updatedSession = { ...s, messages: updatedMessages };
+        syncSessionToSupabase(updatedSession);
+        return updatedSession;
+      }
+      return s;
+    }));
+  };
+
+  const handleSendMessage = async (textToSend: string, viaVoice = false) => {
+    if (!textToSend.trim() || isGenerating) return;
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(null);
+    }
+
+    const userMsg: Message = {
+      id: 'msg-' + Math.random().toString(36).substring(2, 9),
+      sender: 'user',
+      text: textToSend,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    let sessionCopy = { ...activeSession, messages: [...activeSession.messages, userMsg] };
+    
+    if (activeSession.messages.length === 1 && activeSession.messages[0].id.startsWith('greet-')) {
+      sessionCopy.title = textToSend.substring(0, 30) + (textToSend.length > 30 ? '...' : '');
+    }
+
+    setSessions(prev => prev.map(s => s.id === selectedSessionId ? sessionCopy : s));
+    syncSessionToSupabase(sessionCopy);
+    setInputText('');
+    setIsTyping(true);
+    setIsGenerating(true);
+
+    const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+    if (!groqKey) {
+      showToast('Groq API key not configured in environment.', 'error');
+      setIsTyping(false);
+      setIsGenerating(false);
+      return;
+    }
+
+    const systemContext = `
+    You are the HydraX AI Coach, a highly premium health and biometrics coaching advisor powered by Llama 3.3.
+    User Profile:
+    - Name: ${user?.displayName || 'Akash Sharma'}
+    - Email: ${user?.email || 'akash@hydrax.co.in'}
+    - Age: ${user?.age || 28}
+    - Gender: ${user?.gender || 'Male'}
+    - Weight: ${user?.weight || 74} kg
+    - Height: ${user?.height || 178} cm
+    - Blood Group: ${user?.bloodGroup || 'O+'}
+    - Activity Level: ${user?.activityLevel || 'medium'}
+    - Location: ${user?.city || 'Bangalore'}, ${user?.country || 'India'}
+
+    Biometric Streams (Simulated Live Sensors):
+    - Heart Rate: ${currentVitals.heartRate || 72} BPM
+    - Heart Rate Variability (HRV): ${currentVitals.hrv || 60} ms
+    - Skin Temp: ${currentVitals.skinTemp || 36.6} °C
+    - Motion: ${currentVitals.motion || 0.05}
+
+    Fluid Intake Logs:
+    - Water Goal: ${dailyWaterTarget || 2500} ml
+    - Current Water Intake Today: ${currentIntake} ml
+    - Completed Hydration Streak: ${currentStreak} days
+    - Water Logs: ${JSON.stringify(waterLogs.slice(0, 5))}
+
+    Bowel recovery logs & Bristol Index:
+    - Digestive score: ${recoveryScore}%
+    - Symptoms Logs: ${JSON.stringify(symptomLogs.slice(0, 5))}
+
+    Instructions:
+    - You are capable of answering ANY user queries (including coding, career, startups, history, general questions).
+    - If the user asks a health or biometric question, reference their actual health details above to give accurate, personalized, and clinical recommendations.
+    - If the question is general and unrelated to health, act like a standard conversational assistant (like ChatGPT) and answer normally.
+    - Format code blocks using triple backticks. Use bold and lists for readability. Keep responses clean.
+    `;
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqKey}`
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: systemContext },
+            ...sessionCopy.messages.slice(0, -1).map(m => ({
+              role: m.sender === 'coach' ? 'assistant' : 'user',
+              content: m.text
+            })),
+            { role: 'user', content: textToSend }
+          ],
+          stream: true
+        })
+      });
+
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      setIsTyping(false);
+
+      const coachMsgId = 'coach-msg-' + Math.random().toString(36).substring(2, 9);
+      const newCoachMsg: Message = {
+        id: coachMsgId,
+        sender: 'coach',
+        text: '',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setSessions(prev => prev.map(s => {
+        if (s.id === selectedSessionId) {
+          return { ...s, messages: [...s.messages, newCoachMsg] };
+        }
+        return s;
+      }));
+
+      let fullReply = '';
+
+      if (response.body && typeof response.body.getReader === 'function') {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const cleanLine = line.trim();
+            if (!cleanLine) continue;
+            if (cleanLine === 'data: [DONE]') continue;
+
+            if (cleanLine.startsWith('data: ')) {
+              try {
+                const parsed = JSON.parse(cleanLine.slice(6));
+                const delta = parsed?.choices?.[0]?.delta?.content || '';
+                if (delta) {
+                  fullReply += delta;
+                  updateActiveMessageText(coachMsgId, fullReply);
+                }
+              } catch (e) {}
+            }
+          }
+        }
+      } else {
+        const responseData = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${groqKey}`
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              { role: 'system', content: systemContext },
+              ...sessionCopy.messages.slice(0, -1).map(m => ({
+                role: m.sender === 'coach' ? 'assistant' : 'user',
+                content: m.text
+              })),
+              { role: 'user', content: textToSend }
+            ],
+            stream: false
+          })
+        });
+
+        if (!responseData.ok) throw new Error(responseData.statusText);
+        const data = await responseData.json();
+        const text = data?.choices?.[0]?.message?.content || '';
+
+        let currentLen = 0;
+        const interval = setInterval(() => {
+          if (controller.signal.aborted) {
+            clearInterval(interval);
+            return;
+          }
+          currentLen += Math.min(6, text.length - currentLen);
+          fullReply = text.substring(0, currentLen);
+          updateActiveMessageText(coachMsgId, fullReply);
+          if (currentLen >= text.length) {
+            clearInterval(interval);
+            setIsGenerating(false);
+          }
+        }, 20);
+      }
+
+      setIsGenerating(false);
+      if (viaVoice || shouldAutoSpeak) {
+        speakText(coachMsgId, fullReply);
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        showToast('Generation cancelled.', 'info');
+      } else {
+        showToast(`Groq connection error: ${e.message || e}`, 'error');
+      }
+      setIsGenerating(false);
+      setIsTyping(false);
+    }
+  };
+
+  const handleCopyMessage = (text: string) => {
+    try {
+      if (Platform.OS === 'web') {
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text);
+          showToast('Copied to clipboard!', 'success');
+          return;
+        }
+      }
+      const { Clipboard } = require('react-native');
+      if (Clipboard && Clipboard.setString) {
+        Clipboard.setString(text);
+        showToast('Copied to clipboard!', 'success');
+      } else {
+        showToast('Clipboard not available.', 'error');
+      }
+    } catch (e) {
+      showToast('Copied successfully.', 'success');
+    }
+  };
+
+  const handleRegenerate = () => {
+    if (activeSession.messages.length < 2 || isGenerating) return;
+    const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+    const secondLastMsg = activeSession.messages[activeSession.messages.length - 2];
+
+    if (lastMsg.sender === 'coach' && secondLastMsg.sender === 'user') {
+      setSessions(prev => prev.map(s => {
+        if (s.id === selectedSessionId) {
+          const popped = { ...s, messages: s.messages.slice(0, -1) };
+          syncSessionToSupabase(popped);
+          return popped;
+        }
+        return s;
+      }));
+      handleSendMessage(secondLastMsg.text);
+    }
+  };
 
   const startVoiceInput = () => {
     if (typeof window !== 'undefined') {
@@ -124,7 +537,6 @@ export const AICoachScreen: React.FC = () => {
         };
 
         recognition.onerror = (event: any) => {
-          console.error(event);
           setIsListening(false);
           showToast('Speech recognition error: ' + event.error, 'error');
         };
@@ -138,7 +550,6 @@ export const AICoachScreen: React.FC = () => {
           if (transcript) {
             setInputText(transcript);
             handleSendMessage(transcript, true);
-            showToast('Speech captured successfully!', 'success');
           }
         };
 
@@ -147,207 +558,6 @@ export const AICoachScreen: React.FC = () => {
         showToast('Speech-to-text not supported in this browser.', 'error');
       }
     }
-  };
-
-  // Load saved sessions on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = window.localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          setSessions(JSON.parse(saved));
-        }
-      } catch (e) {
-        console.error('Failed to load AI sessions', e);
-      }
-    }
-  }, []);
-
-  // Save sessions to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-    }
-  }, [sessions]);
-
-  const handleClearConversation = () => {
-    setSessions(prev => prev.map(s => {
-      if (s.id === selectedSessionId) {
-        return {
-          ...s,
-          messages: []
-        };
-      }
-      return s;
-    }));
-    showToast('Conversation cleared.', 'info');
-  };
-
-  useEffect(() => {
-    // Auto-scroll to bottom of chat
-    setTimeout(() => {
-      chatScrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  }, [activeSession.messages.length, isTyping]);
-
-  const handleSendMessage = async (textToSend: string, viaVoice = false) => {
-    if (!textToSend.trim()) return;
-
-    const userMsg: Message = {
-      id: 'msg-' + Math.random().toString(36).substring(2, 9),
-      sender: 'user',
-      text: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    // Update active session messages
-    setSessions(prev => prev.map(s => {
-      if (s.id === selectedSessionId) {
-        return {
-          ...s,
-          messages: [...s.messages, userMsg]
-        };
-      }
-      return s;
-    }));
-
-    setInputText('');
-    setIsTyping(true);
-    
-    // Capture state for timeout closure
-    const autoSpeak = viaVoice || shouldAutoSpeak;
-
-    // AI Response generation
-    let coachResponseText = '';
-    const query = textToSend.toLowerCase();
-    const dayOfWeek = new Date().getDay();
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const dayName = dayNames[dayOfWeek];
-
-    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-
-    if (apiKey) {
-      try {
-        const user = useAuthStore.getState().user;
-        const systemContext = `
-        User Name: ${user?.displayName || 'Akash Sharma'}
-        Age: ${user?.age || 28}
-        Gender: ${user?.gender || 'Male'}
-        Weight: ${user?.weight || 74} kg
-        Height: ${user?.height || 178} cm
-        Blood Group: ${user?.bloodGroup || 'O+'}
-        Activity Level: ${user?.activityLevel || 'medium'}
-        City: ${user?.city || 'Bangalore'}
-        Country: ${user?.country || 'India'}
-        Current Hydration: ${currentIntake} ml / Target: ${dailyWaterTarget} ml
-        Heart Rate: ${currentVitals.heartRate} BPM
-        Heart Rate Variability (HRV): ${currentVitals.hrv} ms
-        Skin Temp: ${currentVitals.skinTemp} °C
-        Digestive Recovery Index: ${recoveryScore}%
-        Dehydration Prediction: ${prediction.hydrationScore}% (Risk: ${prediction.riskLevel})
-        Current Hydration Streak: ${currentStreak} days
-        `;
-
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  {
-                    text: `System Context: You are HydraX AI Coach, a premium healthtech bio-intelligence agent. Here is the user's metabolic profile and daily biometric details:\n${systemContext}\n\nUser Question: ${textToSend}\n\nProvide personalized, expert medical-hydration advice. Keep your response concise (under 100 words), encouraging, and extremely scientific.`
-                  }
-                ]
-              }
-            ],
-            generationConfig: {
-              maxOutputTokens: 250,
-              temperature: 0.7,
-            }
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`Gemini API Error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const coachText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!coachText) {
-          throw new Error('Invalid Gemini API response format');
-        }
-        coachResponseText = coachText.trim();
-      } catch (err: any) {
-        console.warn('Gemini API call failed, falling back to local regex advisor.', err);
-      }
-    }
-
-    // Fallback to local regex-based responses if Gemini key is missing or failed
-    if (!coachResponseText) {
-      if (query.includes('tired') || query.includes('fatigue')) {
-        coachResponseText = `Your fatigue is likely driven by a combination of key metabolic signals parsed from your biometrics:\n1. Dehydration: You have only logged ${currentIntake}ml against your daily water target of ${dailyWaterTarget}ml (a ${Math.round(Math.max(0, 100 - (currentIntake / dailyWaterTarget) * 100))}% deficit). Dehydration reduces blood volume, leading to fatigue.\n2. Sleep Debt: Your average sleep is 7h 42m vs your target of ${dailySleepTarget}h.\n3. Recovery Deficit: Your HRV is at ${currentVitals.hrv}ms and heart rate is at ${currentVitals.heartRate} BPM.\nAction: I advise drinking 350ml of water now and taking a 15-minute rest.`;
-      } else if (query.includes('recovery') || query.includes('suggest')) {
-        coachResponseText = `Based on your recovery score of ${recoveryScore}% and vital parameters, here are your personalized recovery suggestions:\n1. Hydration Load: Drink 300ml of electrolytes immediately to thin blood viscosity.\n2. Active Rest: Keep steps low today (limit heavy training) since your HRV of ${currentVitals.hrv}ms indicates nervous system fatigue.\n3. Sleep Prep: Restrict blue light after 9 PM and lower room temperature to 18°C.`;
-      } else if (query.includes('hydration') || query.includes('water') || query.includes('drink')) {
-        let habitNote = '';
-        if (dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0) {
-          habitNote = `Historical patterns show you usually hydrate 15% less on Fridays and weekends. Let's break that habit today. `;
-        } else {
-          habitNote = `You usually hydrate optimal on mid-week days. `;
-        }
-        coachResponseText = `Your fluid intake today is ${currentIntake}ml against your target of ${dailyWaterTarget}ml. ${habitNote}You are currently on a ${currentStreak}-day hydration streak! Keep up this consistency.`;
-      } else if (query.includes('sleep') || query.includes('night')) {
-        coachResponseText = `Sleep efficiency last night was 88% with total sleep at 7h 42m. In comparison to your sleep target of ${dailySleepTarget}h, you have a sleep debt of 18m. Bioimpedance signals stable sleep latency, but skin temperature was slightly elevated (+0.2°C). I suggest cooling your bedroom by 1°C tonight.`;
-      } else if (query.includes('risk') || query.includes('dehydration') || query.includes('predict')) {
-        coachResponseText = `Hydrax bioimpedance predictions show a ${prediction.riskLevel} dehydration risk. In the next 24 hours, we forecast a stable water balance, provided you consume 350ml in the next hour. Confidence score: ${prediction.confidenceScore}%.`;
-      } else if (query.includes('plan')) {
-        coachResponseText = `Personalized Recovery & Hydration plan for ${dayName}:\n- 08:00 AM: 350ml mineral load (Completed)\n- 12:00 PM: 500ml electrolyte intake\n- 04:00 PM: 350ml recovery prep\n- 08:00 PM: 250ml pre-sleep hydration\nAction: Drink 350ml now to support cell oxygenation during your upcoming active window.`;
-      } else {
-        coachResponseText = `Analyzing telemetry packet for ${dayName}: HR ${currentVitals.heartRate} BPM, HRV ${currentVitals.hrv}ms, skin temp ${currentVitals.skinTemp}°C. Overall body state is stable, continuing your ${currentStreak}-day habit streak. What specific biome or hydration query would you like to parse next?`;
-      }
-    }
-
-    const coachMsgId = 'msg-' + Math.random().toString(36).substring(2, 9);
-    const coachMsg: Message = {
-      id: coachMsgId,
-      sender: 'coach',
-      text: coachResponseText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setSessions(prev => prev.map(s => {
-      if (s.id === selectedSessionId) {
-        return {
-          ...s,
-          messages: [...s.messages, coachMsg]
-        };
-      }
-      return s;
-    }));
-    setIsTyping(false);
-
-    if (autoSpeak) {
-      speakText(coachMsgId, coachResponseText);
-    }
-  };
-
-  const handleStartNewChat = () => {
-    const newSessionId = 'session-' + Math.random().toString(36).substring(2, 9);
-    const newSession: ChatSession = {
-      id: newSessionId,
-      title: 'New Biometrics Chat',
-      date: 'Just Now',
-      messages: [
-        { id: '1', sender: 'coach', text: 'New advisor window initialized. I am ready to evaluate vital stats, hydration trends, or sleep reports. What details shall we analyze?', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-      ]
-    };
-    setSessions([newSession, ...sessions]);
-    setSelectedSessionId(newSessionId);
   };
 
   const speakText = (msgId: string, text: string) => {
@@ -367,8 +577,6 @@ export const AICoachScreen: React.FC = () => {
       };
       setIsSpeaking(msgId);
       window.speechSynthesis.speak(utterance);
-    } else {
-      alert("Text-to-speech is not supported in this browser.");
     }
   };
 
@@ -382,7 +590,7 @@ export const AICoachScreen: React.FC = () => {
     <SafeAreaView style={[styles.container, { backgroundColor: darkMode ? '#050B18' : '#F8FAFC' }]} edges={['top']}>
       <View style={styles.contentRow}>
         
-        {/* LEFT COLUMN: Chat Sessions History (Hidden on Mobile) */}
+        {/* LEFT COLUMN: Sidebar Chat Sessions */}
         {isDesktop && (
           <View style={[styles.leftSidebar, { borderRightColor: borderCol, backgroundColor: cardBg }]}>
             <View style={styles.sidebarHeader}>
@@ -429,7 +637,6 @@ export const AICoachScreen: React.FC = () => {
           style={styles.chatContainer}
         >
           <GlassCard style={styles.chatCard}>
-            {/* Header */}
             <View style={[styles.chatHeader, { borderBottomColor: borderCol, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
               <View style={styles.chatHeaderLeft}>
                 <View style={styles.coachAvatarIcon}>
@@ -437,7 +644,7 @@ export const AICoachScreen: React.FC = () => {
                 </View>
                 <View>
                   <Text style={[styles.coachTitleText, { color: textPrimary }]}>Hydrax AI Coach</Text>
-                  <Text style={styles.coachStatus}>Real-Time Telemetry Advisor</Text>
+                  <Text style={styles.coachStatus}>Groq Llama 3.3 Engine</Text>
                 </View>
               </View>
               <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
@@ -452,80 +659,116 @@ export const AICoachScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Scrollable messages area */}
-            <ScrollView 
-              ref={chatScrollRef}
-              contentContainerStyle={styles.messageList}
-              showsVerticalScrollIndicator={false}
-            >
-              {activeSession.messages.length === 0 ? (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, paddingHorizontal: 20 }}>
-                  <MessageSquare size={32} color="#00E5C3" style={{ marginBottom: 12, opacity: 0.6 }} />
-                  <Text style={{ color: textPrimary, fontSize: 13, fontWeight: '900', textAlign: 'center' }}>No Messages Yet</Text>
-                  <Text style={{ color: textSecondary, fontSize: 11, textAlign: 'center', marginTop: 4, lineHeight: 16 }}>
-                    Start a conversation with the AI coach. You can ask about your dehydration risk, recovery stats, sleep quality, or log history.
-                  </Text>
-                </View>
-              ) : (
-                activeSession.messages.map((msg) => {
-                  const isCoach = msg.sender === 'coach';
-                  return (
-                    <View 
-                      key={msg.id}
-                      style={[
-                        styles.messageRow,
-                        isCoach ? styles.coachRowAlign : styles.userRowAlign
-                      ]}
-                    >
-                      {isCoach && (
-                        <View style={styles.msgAvatar}>
-                          <Sparkles size={10} color="#00E5C3" />
-                        </View>
-                      )}
-                      <View style={styles.bubbleContainer}>
-                        <GlassCard 
-                          style={[
-                            styles.messageBubble,
-                            isCoach ? styles.coachBubble : styles.userBubble,
-                            isCoach 
-                              ? { borderColor: darkMode ? 'rgba(0, 229, 195, 0.1)' : '#E2E8F0' } 
-                              : { backgroundColor: '#00E5C3' }
-                          ] as any}
-                        >
-                          <Text style={[styles.messageText, { color: isCoach ? textPrimary : '#050B18' }]}>
-                            {msg.text}
-                          </Text>
-                        </GlassCard>
-                        <View style={[styles.messageFooter, isCoach ? styles.footerLeft : styles.footerRight]}>
-                          <Text style={styles.msgTime}>{msg.timestamp}</Text>
-                          {!isCoach && (
-                            <Text style={{ fontSize: 9, color: '#00E5C3', marginLeft: 4 }}>✓✓</Text>
-                          )}
-                          {isCoach && (
-                            <TouchableOpacity onPress={() => speakText(msg.id, msg.text)} style={styles.speakButton}>
-                              <Volume2 size={12} color={isSpeaking === msg.id ? '#00E5C3' : textSecondary} />
-                            </TouchableOpacity>
-                          )}
+            <View style={{ flex: 1, position: 'relative' }}>
+              <ScrollView 
+                ref={chatScrollRef}
+                contentContainerStyle={styles.messageList}
+                showsVerticalScrollIndicator={false}
+              >
+                {activeSession.messages.length === 0 ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, paddingHorizontal: 20 }}>
+                    <MessageSquare size={32} color="#00E5C3" style={{ marginBottom: 12, opacity: 0.6 }} />
+                    <Text style={{ color: textPrimary, fontSize: 13, fontWeight: '900', textAlign: 'center' }}>No Messages Yet</Text>
+                    <Text style={{ color: textSecondary, fontSize: 11, textAlign: 'center', marginTop: 4, lineHeight: 16 }}>
+                      Start a conversation with the AI coach. You can ask anything from biometric analysis to general coding!
+                    </Text>
+                  </View>
+                ) : (
+                  activeSession.messages.map((msg) => {
+                    const isCoach = msg.sender === 'coach';
+                    return (
+                      <View 
+                        key={msg.id}
+                        style={[
+                          styles.messageRow,
+                          isCoach ? styles.coachRowAlign : styles.userRowAlign
+                        ]}
+                      >
+                        {isCoach && (
+                          <View style={styles.msgAvatar}>
+                            <Sparkles size={10} color="#00E5C3" />
+                          </View>
+                        )}
+                        <View style={styles.bubbleContainer}>
+                          <GlassCard 
+                            style={[
+                              styles.messageBubble,
+                              isCoach ? styles.coachBubble : styles.userBubble,
+                              isCoach 
+                                ? { borderColor: darkMode ? 'rgba(0, 229, 195, 0.1)' : '#E2E8F0' } 
+                                : { backgroundColor: '#00E5C3' }
+                            ] as any}
+                          >
+                            {isCoach ? (
+                              <MarkdownRenderer text={msg.text} color={textPrimary} darkMode={darkMode} />
+                            ) : (
+                              <Text style={[styles.messageText, { color: '#050B18' }]}>
+                                {msg.text}
+                              </Text>
+                            )}
+                          </GlassCard>
+                          <View style={[styles.messageFooter, isCoach ? styles.footerLeft : styles.footerRight]}>
+                            <Text style={styles.msgTime}>{msg.timestamp}</Text>
+                            {!isCoach && (
+                              <Text style={{ fontSize: 9, color: '#00E5C3', marginLeft: 4 }}>✓✓</Text>
+                            )}
+                            {isCoach && (
+                              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                                <TouchableOpacity onPress={() => speakText(msg.id, msg.text)} style={styles.speakButton}>
+                                  <Volume2 size={12} color={isSpeaking === msg.id ? '#00E5C3' : textSecondary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => handleCopyMessage(msg.text)} style={styles.speakButton}>
+                                  <Text style={{ fontSize: 9, color: textSecondary, fontWeight: '700' }}>Copy</Text>
+                                </TouchableOpacity>
+                                {activeSession.messages[activeSession.messages.length - 1]?.id === msg.id && (
+                                  <TouchableOpacity onPress={handleRegenerate} style={styles.speakButton}>
+                                    <Text style={{ fontSize: 9, color: '#00E5C3', fontWeight: '700' }}>Regenerate</Text>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                            )}
+                          </View>
                         </View>
                       </View>
-                    </View>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
 
-              {isTyping && (
-                <View style={[styles.messageRow, styles.coachRowAlign]}>
-                  <View style={styles.msgAvatar}>
-                    <Sparkles size={10} color="#00E5C3" />
+                {isTyping && (
+                  <View style={[styles.messageRow, styles.coachRowAlign]}>
+                    <View style={styles.msgAvatar}>
+                      <Sparkles size={10} color="#00E5C3" />
+                    </View>
+                    <GlassCard style={[styles.messageBubble, styles.coachBubble, { width: 60, height: 36, justifyContent: 'center', alignItems: 'center', borderColor: borderCol }]}>
+                      <ActivityIndicator size="small" color="#00E5C3" />
+                    </GlassCard>
                   </View>
-                  <GlassCard style={[styles.messageBubble, styles.coachBubble, { width: 60, height: 36, justifyContent: 'center', alignItems: 'center', borderColor: borderCol }]}>
-                    <ActivityIndicator size="small" color="#00E5C3" />
-                  </GlassCard>
+                )}
+              </ScrollView>
+
+              {isGenerating && (
+                <View style={{ position: 'absolute', bottom: 10, left: 0, right: 0, alignItems: 'center', zIndex: 10 }}>
+                  <TouchableOpacity 
+                    onPress={handleStopGenerating}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: 'rgba(255, 77, 109, 0.95)',
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      borderRadius: 20,
+                      borderWidth: 1,
+                      borderColor: '#FF4D6D'
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>Stop Generating</Text>
+                  </TouchableOpacity>
                 </View>
               )}
-            </ScrollView>
+            </View>
 
-            {/* Suggestions prompt chips */}
             <View style={styles.suggestionsWrapper}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionsScroll}>
                 {suggestionPrompts.map((p) => (
@@ -541,7 +784,6 @@ export const AICoachScreen: React.FC = () => {
               </ScrollView>
             </View>
 
-             {/* Chat Input controls */}
             <View style={[styles.inputBarWrapper, { borderTopColor: borderCol }]}>
               <View style={[styles.inputBox, { backgroundColor: inputBg, borderColor: borderCol }]}>
                 <TextInput
@@ -554,7 +796,6 @@ export const AICoachScreen: React.FC = () => {
                   editable={!isListening}
                 />
                 
-                {/* Voice Input Mic Button */}
                 <TouchableOpacity
                   onPress={startVoiceInput}
                   style={[
@@ -576,7 +817,7 @@ export const AICoachScreen: React.FC = () => {
                 <TouchableOpacity 
                   onPress={() => handleSendMessage(inputText)}
                   style={[styles.sendBtn, { backgroundColor: inputText.trim() ? '#00E5C3' : 'rgba(255,255,255,0.05)' }]}
-                  disabled={!inputText.trim()}
+                  disabled={!inputText.trim() || isGenerating}
                 >
                   <Send size={14} color="#050B18" />
                 </TouchableOpacity>
@@ -585,7 +826,7 @@ export const AICoachScreen: React.FC = () => {
           </GlassCard>
         </KeyboardAvoidingView>
 
-        {/* RIGHT COLUMN: Real-Time Physiological Telemetry (Hidden on Mobile) */}
+        {/* RIGHT COLUMN: Real-Time Physiological Telemetry */}
         {isDesktop && (
           <View style={[styles.rightPanel, { borderLeftColor: borderCol, backgroundColor: cardBg }]}>
             <Text style={[styles.panelTitle, { color: textPrimary }]}>Live Telemetry</Text>
