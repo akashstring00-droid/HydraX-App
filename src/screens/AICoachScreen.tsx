@@ -175,14 +175,17 @@ export const AICoachScreen: React.FC = () => {
   const chatScrollRef = useRef<ScrollView>(null);
   const activeSession = sessions.find(s => s.id === selectedSessionId) || sessions[0];
 
-  const lastMessageText = activeSession?.messages[activeSession.messages.length - 1]?.text || '';
+  const prevGenerating = useRef(false);
 
-  // Auto-scroll to bottom of chat
+  // Auto-scroll on generation complete
   useEffect(() => {
-    setTimeout(() => {
-      chatScrollRef.current?.scrollToEnd({ animated: true });
-    }, 60);
-  }, [activeSession?.messages.length, lastMessageText, isTyping]);
+    if (prevGenerating.current && !isGenerating) {
+      setTimeout(() => {
+        chatScrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+    prevGenerating.current = isGenerating;
+  }, [isGenerating]);
 
   const suggestionPrompts = [
     'How much water should I drink?',
@@ -313,6 +316,11 @@ export const AICoachScreen: React.FC = () => {
     setInputText('');
     setIsTyping(true);
     setIsGenerating(true);
+
+    // Scroll immediately on user send
+    setTimeout(() => {
+      chatScrollRef.current?.scrollToEnd({ animated: true });
+    }, 50);
 
     const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
     if (!groqKey) {
@@ -877,13 +885,19 @@ export const AICoachScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    height: (Platform.OS === 'web' ? '100vh' : '100%') as any,
+    overflow: 'hidden',
   },
   contentRow: {
     flex: 1,
     flexDirection: 'row',
+    height: '100%',
+    minHeight: 0,
+    overflow: 'hidden',
   },
   leftSidebar: {
     width: 250,
+    height: '100%',
     borderRightWidth: 1,
     padding: 16,
   },
@@ -922,10 +936,14 @@ const styles = StyleSheet.create({
   },
   chatContainer: {
     flex: 1,
+    height: '100%',
+    minHeight: 0,
     padding: 16,
   },
   chatCard: {
     flex: 1,
+    height: '100%',
+    minHeight: 0,
     borderRadius: 24,
     overflow: 'hidden',
   },
@@ -1092,6 +1110,7 @@ const styles = StyleSheet.create({
   },
   rightPanel: {
     width: 250,
+    height: '100%',
     borderLeftWidth: 1,
     padding: 16,
   },
