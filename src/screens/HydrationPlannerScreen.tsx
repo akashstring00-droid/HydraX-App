@@ -18,6 +18,7 @@ import { useWaterStore } from '../store/useWaterStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useToastStore } from '../store/useToastStore';
 import { useGoalsStore } from '../store/useGoalsStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { GlassCard } from '../components/GlassCard';
 import Svg, { Circle, Line, Text as SvgText, Path, G, Rect } from 'react-native-svg';
 
@@ -25,6 +26,7 @@ export const HydrationPlannerScreen: React.FC = () => {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 768;
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const user = useAuthStore((state) => state.user);
 
   // Water Store
   const { 
@@ -40,17 +42,46 @@ export const HydrationPlannerScreen: React.FC = () => {
   const showToast = useToastStore((state) => state.showToast);
 
   // Inputs state
-  const [age, setAge] = useState('26');
-  const [weight, setWeight] = useState('74');
+  const [age, setAge] = useState(user?.age ? String(user.age) : '28');
+  const [weight, setWeight] = useState(user?.weight ? String(user.weight) : '74');
   const [weatherTemp, setWeatherTemp] = useState('30'); // Ambient temperature in C
   const [activityHrs, setActivityHrs] = useState('1.5');
   const [sleepHrs, setSleepHrs] = useState('7.5');
   const [customAmount, setCustomAmount] = useState('');
 
   const [calculatedGoal, setCalculatedGoal] = useState(dailyWaterTarget);
+  const [aiAdvice, setAiAdvice] = useState('Drink now. Sweat losses elevated due to weather temperature.');
+  const [isGeneratingAdvice, setIsGeneratingAdvice] = useState(false);
   
   // Goals & Streak Store bindings
   const { currentStreak, badges: storeBadges } = useGoalsStore();
+
+  const fetchAiAdvice = async () => {
+    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+    if (!apiKey) return;
+    setIsGeneratingAdvice(true);
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const promptText = `Provide a concise 1-sentence hydration suggestion for a user with spec: Weight: ${weight}kg, Age: ${age} years, Weather: ${weatherTemp}°C, Activity level: ${activityHrs} hours, Current logged: ${currentIntake}ml. Do not include prefix tags.`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: promptText }] }],
+          generationConfig: { maxOutputTokens: 60, temperature: 0.7 }
+        })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const advice = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (advice) setAiAdvice(advice.trim());
+      }
+    } catch (e) {
+      console.warn('Gemini advice fetch failed', e);
+    } finally {
+      setIsGeneratingAdvice(false);
+    }
+  };
 
   // Recalculate daily water goal based on inputs
   useEffect(() => {
@@ -68,6 +99,9 @@ export const HydrationPlannerScreen: React.FC = () => {
 
     const total = Math.round(baseGoal + weightAddition * 0.3 + activityAddition + tempAddition);
     setCalculatedGoal(total);
+    
+    // Fetch live Gemini advice
+    fetchAiAdvice();
   }, [weight, weatherTemp, activityHrs]);
 
   const handleApplyCalculatedGoal = () => {
@@ -318,7 +352,7 @@ export const HydrationPlannerScreen: React.FC = () => {
               <View style={[styles.recsBox, { borderTopColor: borderCol }]}>
                 <Sparkles size={14} color="#FFAD33" style={{ marginRight: 8 }} />
                 <Text style={[styles.recsText, { color: textPrimary }]}>
-                  AI Advice: <Text style={{ color: '#FFAD33', fontWeight: '800' }}>Drink now</Text>. Sweat losses elevated due to weather temperature ({weatherTemp}°C).
+                  AI Advice: {isGeneratingAdvice ? 'Recalibrating biometrics...' : aiAdvice}
                 </Text>
               </View>
             </GlassCard>

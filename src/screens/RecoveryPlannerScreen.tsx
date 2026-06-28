@@ -20,6 +20,7 @@ import { useWaterStore } from '../store/useWaterStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useToastStore } from '../store/useToastStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { GlassCard } from '../components/GlassCard';
 import Svg, { Circle, Rect, Line, G, Text as SvgText, Path } from 'react-native-svg';
 
@@ -72,23 +73,79 @@ export const RecoveryPlannerScreen: React.FC = () => {
     }, 50);
   };
 
-  const handleGeneratePlan = () => {
+  const handleGeneratePlan = async () => {
     setIsLoading(true);
-    showToast("Generating dynamic recovery plan...", "info");
-    setTimeout(() => {
-      setIsLoading(false);
+    showToast("Generating dynamic AI recovery plan...", "info");
+
+    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+    if (!apiKey) {
+      setTimeout(() => {
+        setIsLoading(false);
+        setExpectedTomorrow(Math.min(98, Math.round(recoveryScore + 5 + Math.random() * 5)));
+        setPlanItems(prev => prev.map(item => ({ ...item, completed: false })));
+        showToast("Dynamic recovery plan generated!", "success");
+      }, 1200);
+      return;
+    }
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const promptText = `Generate a JSON array of 6 recovery actions for: HR: ${currentVitals.heartRate} bpm, HRV: ${currentVitals.hrv} ms, Skin temp: ${currentVitals.skinTemp}°C, Gut score: ${recoveryScore}%. Format must be: [{"id": "item-1", "timeOfDay": "Morning", "text": "...", "completed": false}]. Return ONLY raw JSON array.`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: promptText }] }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.7 }
+        })
+      });
+
+      if (!response.ok) throw new Error(response.statusText);
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPlanItems(parsed.map((item, idx) => ({
+            id: item.id || `ai-item-${idx}`,
+            timeOfDay: item.timeOfDay || 'Morning',
+            text: item.text,
+            completed: false
+          })));
+        }
+      }
+      setExpectedTomorrow(Math.min(99, Math.round(recoveryScore + 8)));
+      showToast("Dynamic AI recovery plan generated!", "success");
+    } catch (err: any) {
+      console.warn('Gemini recovery generation failed, running fallback.', err);
       setExpectedTomorrow(Math.min(98, Math.round(recoveryScore + 5 + Math.random() * 5)));
       setPlanItems(prev => prev.map(item => ({ ...item, completed: false })));
-      showToast("Dynamic recovery plan generated!", "success");
-    }, 1500);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleExportPDF = () => {
-    showToast("Preparing PDF export...", "info");
-    if (typeof window !== 'undefined') {
-      window.print();
-    } else {
-      showToast("PDF Export is available on web browsers.", "error");
+  const handleExportPDF = async () => {
+    showToast("Preparing PDF dossier...", "info");
+    const user = useAuthStore.getState().user;
+    try {
+      const { ReportsCompiler } = require('../lib/weeklyReports');
+      await ReportsCompiler.compileAndShare({
+        profile: user,
+        waterLogs: useWaterStore.getState().logs,
+        symptomLogs: useDiarrheaStore.getState().logs,
+        avgHeartRate: currentVitals.heartRate,
+        avgHrv: currentVitals.hrv,
+        avgSkinTemp: currentVitals.skinTemp,
+        recoveryScore,
+        startDate: new Date().toLocaleDateString(),
+        endDate: new Date().toLocaleDateString(),
+        reportType: 'Daily'
+      });
+      showToast("PDF exported successfully!", "success");
+    } catch (e: any) {
+      showToast(e.message || "Failed to compile PDF.", "error");
     }
   };
 

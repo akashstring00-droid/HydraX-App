@@ -20,6 +20,7 @@ import { useWaterStore } from '../store/useWaterStore';
 import { useVitalsStore } from '../store/useVitalsStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
 import { useToastStore } from '../store/useToastStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { GlassCard } from '../components/GlassCard';
 import Svg, { Circle, Line, Text as SvgText, Path, G, Rect } from 'react-native-svg';
 
@@ -38,12 +39,26 @@ export const WeeklyReportsScreen: React.FC = () => {
   const [selectedWeek, setSelectedWeek] = useState<'current' | 'previous'>('current');
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleExportPDF = () => {
-    showToast("Generating PDF report...", "info");
-    if (typeof window !== 'undefined') {
-      window.print();
-    } else {
-      showToast("PDF Export is available on web browsers.", "error");
+  const handleExportPDF = async () => {
+    showToast("Preparing PDF dossier...", "info");
+    const user = useAuthStore.getState().user;
+    try {
+      const { ReportsCompiler } = require('../lib/weeklyReports');
+      await ReportsCompiler.compileAndShare({
+        profile: user,
+        waterLogs: useWaterStore.getState().logs,
+        symptomLogs: useDiarrheaStore.getState().logs,
+        avgHeartRate: currentVitals.heartRate,
+        avgHrv: currentVitals.hrv,
+        avgSkinTemp: currentVitals.skinTemp,
+        recoveryScore,
+        startDate: new Date().toLocaleDateString(),
+        endDate: new Date().toLocaleDateString(),
+        reportType: 'Weekly'
+      });
+      showToast("PDF exported successfully!", "success");
+    } catch (e: any) {
+      showToast(e.message || "Failed to compile PDF.", "error");
     }
   };
 

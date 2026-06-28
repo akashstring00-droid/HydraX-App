@@ -75,7 +75,7 @@ export const InsightsScreen: React.FC = () => {
     return `Based on your bio-metrics (HRV: ${currentVitals.hrv}ms, Temp: ${currentVitals.skinTemp}°C, Gut score: ${recoveryScore}%), your overall physiological risk remains ${prediction.riskLevel}. Continue logging fluid inputs and avoid intense exercises until your vitals stabilize. Let me know if you want detailed notes on stress or sleep!`;
   };
 
-  const handleSendChat = (text: string) => {
+  const handleSendChat = async (text: string) => {
     if (!text.trim()) return;
 
     const userMsg: MessageItem = {
@@ -88,7 +88,56 @@ export const InsightsScreen: React.FC = () => {
     setChatInput('');
     setIsTyping(true);
 
-    setTimeout(() => {
+    const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+    if (!apiKey) {
+      setTimeout(() => {
+        const coachText = getCoachResponse(text);
+        const coachMsg: MessageItem = {
+          sender: 'coach',
+          text: coachText,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, coachMsg]);
+        setIsTyping(false);
+      }, 1000);
+      return;
+    }
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const promptText = `
+      You are the Hydrax AI Coach. Respond to the user's query.
+      User query: "${text}"
+      Current User State Context:
+      - HR: ${currentVitals.heartRate || 72} bpm
+      - HRV: ${currentVitals.hrv || 60} ms
+      - Skin Temp: ${currentVitals.skinTemp || 36.6}°C
+      - Fluid intake today: ${currentIntake} ml vs goal: ${dailyWaterTarget} ml
+      - Gut Recovery Score: ${recoveryScore}%
+      
+      Respond concisely and professionally in 2-3 sentences.
+      `;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: promptText }] }],
+          generationConfig: { maxOutputTokens: 120, temperature: 0.7 }
+        })
+      });
+
+      if (!response.ok) throw new Error(response.statusText);
+      const data = await response.json();
+      const coachText = data?.candidates?.[0]?.content?.parts?.[0]?.text || getCoachResponse(text);
+      const coachMsg: MessageItem = {
+        sender: 'coach',
+        text: coachText.trim(),
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, coachMsg]);
+    } catch (e) {
+      console.warn('Gemini chat failed, running fallback', e);
       const coachText = getCoachResponse(text);
       const coachMsg: MessageItem = {
         sender: 'coach',
@@ -96,8 +145,9 @@ export const InsightsScreen: React.FC = () => {
         timestamp: new Date()
       };
       setMessages(prev => [...prev, coachMsg]);
+    } finally {
       setIsTyping(false);
-    }, 1200);
+    }
   };
 
   // Compute breakdown percentages for a custom SVG fluid balance chart

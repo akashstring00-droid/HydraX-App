@@ -3,6 +3,8 @@ import { useBLEStore } from '../store/useBLEStore';
 import { useVitalsStore } from '../store/useVitalsStore';
 import { useWaterStore } from '../store/useWaterStore';
 import { useDiarrheaStore } from '../store/useDiarrheaStore';
+import { useAuthStore } from '../store/useAuthStore';
+import { supabase } from '../lib/supabase';
 
 export const SensorStreamSim: React.FC = () => {
   const { isDemoMode, connectedDevice, batteryLevel, setBatteryLevel } = useBLEStore();
@@ -13,6 +15,7 @@ export const SensorStreamSim: React.FC = () => {
   const ppgIndexRef = useRef(0);
   const vitalTimerRef = useRef<NodeJS.Timeout | null>(null);
   const ppgTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const predictionTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 1. Simulate PPG wave at high speed (e.g., 50ms intervals) for a smooth waveform
   useEffect(() => {
@@ -32,8 +35,6 @@ export const SensorStreamSim: React.FC = () => {
       const noise = (Math.random() - 0.5) * 5;
       const ppgValue = baseVal + wavePrimary + waveDichrotic + noise;
 
-      // We'll update the vital buffer with just PPG values at 50ms intervals
-      // But keep the other values stable or slightly changing
       const hr = currentVitals.heartRate || 72;
       const hrv = currentVitals.hrv || 60;
       const temp = currentVitals.skinTemp || 36.6;
@@ -73,7 +74,6 @@ export const SensorStreamSim: React.FC = () => {
       let riskLevel: 'Low' | 'Medium' | 'High' = 'Low';
       let dehydrationPercent = 5;
 
-      // Adjust based on water intake and latest diarrhea severity
       const activeDiarrheaLogs = logs.filter(log => {
         const hoursAgo = (new Date().getTime() - new Date(log.timestamp).getTime()) / (1000 * 60 * 60);
         return hoursAgo < 24; // logs within last 24h
@@ -108,7 +108,6 @@ export const SensorStreamSim: React.FC = () => {
         recommendations.push('Vitals are stable and within peak recovery boundaries.');
       }
 
-      // Update the vitals store
       addSensorData(
         512 + Math.sin(ppgIndexRef.current * 0.15) * 120, // keep PPG within bounds
         nextHR,
@@ -141,6 +140,78 @@ export const SensorStreamSim: React.FC = () => {
       if (vitalTimerRef.current) clearInterval(vitalTimerRef.current);
     };
   }, [isDemoMode, connectedDevice, currentVitals, currentIntake, dailyWaterTarget, logs, batteryLevel, setBatteryLevel, addSensorData, updatePrediction]);
+
+  // 3. AI predictions background loop (queries Gemini every 60 seconds)
+  useEffect(() => {
+    if (!isDemoMode || !connectedDevice) {
+      if (predictionTimerRef.current) clearInterval(predictionTimerRef.current);
+      return;
+    }
+
+    const fetchPredictions = async () => {
+      const user = useAuthStore.getState().user;
+      if (!user) return;
+      const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+      if (!apiKey) return;
+
+      try {
+        const promptText = `
+        Analyze current biometrics to predict hydration next 24h, recovery tomorrow, and dehydration risk.
+        Current metrics:
+        - HR: ${currentVitals.heartRate || 72} bpm
+        - HRV: ${currentVitals.hrv || 60} ms
+        - Temp: ${currentVitals.skinTemp || 36.6}°C
+        - Water logged today: ${currentIntake} ml vs daily goal: ${dailyWaterTarget} ml
+        - Digestive Recovery Index: ${recoveryScore}%
+        
+        Respond only with a JSON object:
+        {
+          "dehydrationPercent": number,
+          "hydrationScore": number,
+          "riskLevel": "Low" | "Medium" | "High",
+          "confidenceScore": number,
+          "recommendations": string[]
+        }
+        Return ONLY raw JSON object.
+        `;
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: promptText }] }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.7 }
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (responseText) {
+            const parsed = JSON.parse(responseText);
+            updatePrediction({
+              dehydrationPercent: parsed.dehydrationPercent ?? 10,
+              hydrationScore: parsed.hydrationScore ?? 90,
+              riskLevel: parsed.riskLevel || 'Low',
+              confidenceScore: parsed.confidenceScore || 95,
+              recommendations: parsed.recommendations || []
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Gemini dynamic predictions calculation failed:', e);
+      }
+    };
+
+    // Run initially and then every 60s
+    fetchPredictions();
+    predictionTimerRef.current = setInterval(fetchPredictions, 60000);
+
+    return () => {
+      if (predictionTimerRef.current) clearInterval(predictionTimerRef.current);
+    };
+  }, [isDemoMode, connectedDevice, currentVitals.heartRate, currentVitals.hrv, currentVitals.skinTemp, currentIntake, dailyWaterTarget, recoveryScore]);
 
   // Recalculate diarrhea recovery score initially
   useEffect(() => {
