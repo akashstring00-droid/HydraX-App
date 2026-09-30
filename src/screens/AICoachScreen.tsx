@@ -8,6 +8,8 @@ import { AICoachMessage, DisasterModeType } from '../types';
 import { sensorService } from '../sensors/SensorService';
 import { aiCoachStore } from '../ai/AICoachStore';
 
+import { themeStore } from '../theme/ThemeStore';
+
 export const AICoachScreen: React.FC = () => {
   const [telemetry, setTelemetry] = useState<HydraXTelemetry | null>(null);
   const [connState, setConnState] = useState<DeviceConnectionState>(telemetryStore.getSnapshot().state);
@@ -15,6 +17,7 @@ export const AICoachScreen: React.FC = () => {
   const [inputText, setInputText] = useState<string>('');
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [messages, setMessages] = useState<AICoachMessage[]>(aiCoachStore.getMessages());
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
 
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -26,11 +29,17 @@ export const AICoachScreen: React.FC = () => {
     const unsubChat = aiCoachStore.subscribe((msgs) => {
       setMessages(msgs);
     });
+    const unsubTheme = themeStore.subscribe((m) => {
+      setThemeMode(m);
+    });
     return () => {
       unsubTelemetry();
       unsubChat();
+      unsubTheme();
     };
   }, []);
+
+  const isDark = themeMode === 'dark';
 
   const hr = telemetry?.hr ? `${telemetry.hr} BPM` : '--';
   const skinTemp = telemetry?.skinTemp ? `${telemetry.skinTemp.toFixed(1)}°C` : '--';
@@ -113,26 +122,26 @@ export const AICoachScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       {/* Top Header */}
-      <View style={styles.topHeader}>
+      <View style={[styles.topHeader, isDark && styles.topHeaderDark]}>
         <View style={styles.headerLeft}>
           <View style={styles.botIconBox}>
             <Bot color="#0D9488" size={20} />
           </View>
           <View>
-            <Text style={styles.headerTitle}>HydraX Personal Health Coach</Text>
-            <Text style={styles.headerSub}>ChatGPT-Style Real-Time Intelligence</Text>
+            <Text style={[styles.headerTitle, isDark && styles.textDark]}>HydraX Personal Health Coach</Text>
+            <Text style={[styles.headerSub, isDark && styles.subDark]}>ChatGPT-Style Real-Time Intelligence</Text>
           </View>
         </View>
 
         <View style={styles.headerRightGroup}>
           <TouchableOpacity 
-            style={styles.clearBtn} 
+            style={[styles.clearBtn, isDark && styles.clearBtnDark]} 
             onPress={() => aiCoachStore.clearChat()}
             title="Clear Chat"
           >
-            <Trash2 color="#64748B" size={15} />
+            <Trash2 color={isDark ? '#94A3B8' : '#64748B'} size={15} />
           </TouchableOpacity>
           <View style={styles.groqBadge}>
             <Zap color="#F59E0B" size={11} />
@@ -142,28 +151,28 @@ export const AICoachScreen: React.FC = () => {
       </View>
 
       {/* CURRENT CONTEXT STICKY STRIP */}
-      <View style={styles.contextStrip}>
+      <View style={[styles.contextStrip, isDark && styles.topHeaderDark]}>
         <Text style={styles.contextStripLabel}>LIVE TELEMETRY:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contextScroll}>
-          <View style={styles.contextPill}>
+          <View style={[styles.contextPill, isDark && styles.clearBtnDark]}>
             <Heart color="#EF4444" size={11} />
-            <Text style={styles.contextPillText}>HR {hr}</Text>
+            <Text style={[styles.contextPillText, isDark && styles.subDark]}>HR {hr}</Text>
           </View>
-          <View style={styles.contextPill}>
+          <View style={[styles.contextPill, isDark && styles.clearBtnDark]}>
             <Thermometer color="#F59E0B" size={11} />
-            <Text style={styles.contextPillText}>Skin {skinTemp}</Text>
+            <Text style={[styles.contextPillText, isDark && styles.subDark]}>Skin {skinTemp}</Text>
           </View>
-          <View style={styles.contextPill}>
+          <View style={[styles.contextPill, isDark && styles.clearBtnDark]}>
             <Wind color="#06B6D4" size={11} />
-            <Text style={styles.contextPillText}>Amb {ambientTemp}</Text>
+            <Text style={[styles.contextPillText, isDark && styles.subDark]}>Amb {ambientTemp}</Text>
           </View>
-          <View style={styles.contextPill}>
+          <View style={[styles.contextPill, isDark && styles.clearBtnDark]}>
             <Droplets color="#3B82F6" size={11} />
-            <Text style={styles.contextPillText}>Hum {humidity}</Text>
+            <Text style={[styles.contextPillText, isDark && styles.subDark]}>Hum {humidity}</Text>
           </View>
-          <View style={styles.contextPill}>
+          <View style={[styles.contextPill, isDark && styles.clearBtnDark]}>
             <Sparkles color="#0D9488" size={11} />
-            <Text style={styles.contextPillText}>Risk {risk}</Text>
+            <Text style={[styles.contextPillText, isDark && styles.subDark]}>Risk {risk}</Text>
           </View>
         </ScrollView>
       </View>
@@ -183,8 +192,8 @@ export const AICoachScreen: React.FC = () => {
               </View>
             )}
 
-            <View style={msg.sender === 'user' ? styles.userBubble : styles.coachBubble}>
-              <Text style={msg.sender === 'user' ? styles.userMsgText : styles.coachMsgText}>
+            <View style={msg.sender === 'user' ? styles.userBubble : [styles.coachBubble, isDark && styles.coachBubbleDark]}>
+              <Text style={msg.sender === 'user' ? styles.userMsgText : [styles.coachMsgText, isDark && styles.textDark]}>
                 {renderFormattedText(msg.text, msg.sender === 'user')}
               </Text>
               <Text style={msg.sender === 'user' ? styles.userMsgTime : styles.coachMsgTime}>{msg.timestamp}</Text>
@@ -266,6 +275,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
+  containerDark: {
+    backgroundColor: '#070D1A',
+  },
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -276,6 +288,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+  },
+  topHeaderDark: {
+    backgroundColor: '#0F172A',
+    borderBottomColor: '#1E293B',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -298,9 +314,15 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     letterSpacing: -0.3,
   },
+  textDark: {
+    color: '#F8FAFC',
+  },
   headerSub: {
     fontSize: 10,
     color: '#64748B',
+  },
+  subDark: {
+    color: '#94A3B8',
   },
   headerRightGroup: {
     flexDirection: 'row',
@@ -314,6 +336,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  clearBtnDark: {
+    backgroundColor: '#1E293B',
   },
   groqBadge: {
     flexDirection: 'row',
@@ -411,6 +436,10 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  coachBubbleDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   userBubble: {
     flexShrink: 1,

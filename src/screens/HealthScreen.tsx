@@ -6,18 +6,28 @@ import { defaultUserProfile } from '../data/mockData';
 import { telemetryStore } from '../telemetry/TelemetryStore';
 import { HydraXTelemetry, DeviceConnectionState } from '../telemetry/telemetryTypes';
 
+import { themeStore } from '../theme/ThemeStore';
+
 export const HealthScreen: React.FC = () => {
   const [telemetry, setTelemetry] = useState<HydraXTelemetry | null>(null);
   const [connState, setConnState] = useState<DeviceConnectionState>(telemetryStore.getSnapshot().state);
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
 
   useEffect(() => {
-    const unsubscribe = telemetryStore.subscribe((t, s) => {
+    const unsubTelemetry = telemetryStore.subscribe((t, s) => {
       setTelemetry(t);
       setConnState(s);
     });
-    return unsubscribe;
+    const unsubTheme = themeStore.subscribe((m) => {
+      setThemeMode(m);
+    });
+    return () => {
+      unsubTelemetry();
+      unsubTheme();
+    };
   }, []);
 
+  const isDark = themeMode === 'dark';
   const baseline = defaultUserProfile.healthBaseline;
   const isLive = connState.connected || connState.isDemoMode;
 
@@ -42,11 +52,11 @@ export const HealthScreen: React.FC = () => {
   const steps7D = [4200, 5600, 6100, 4800, 7200, 6800, liveSteps];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       {/* Top Header */}
-      <View style={styles.topHeader}>
-        <Text style={styles.headerTitle}>Progress & Analytics</Text>
-        <Text style={styles.headerSub}>
+      <View style={[styles.topHeader, isDark && styles.topHeaderDark]}>
+        <Text style={[styles.headerTitle, isDark && styles.textDark]}>Progress & Analytics</Text>
+        <Text style={[styles.headerSub, isDark && styles.subDark]}>
           {isLive ? 'Live hardware telemetry history & biometrics' : 'Connect HydraX BLE band for live biometrics'}
         </Text>
       </View>
@@ -200,6 +210,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
+  containerDark: {
+    backgroundColor: '#070D1A',
+  },
   topHeader: {
     paddingHorizontal: 16,
     paddingTop: 14,
@@ -208,16 +221,26 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
   },
+  topHeaderDark: {
+    backgroundColor: '#0F172A',
+    borderBottomColor: '#1E293B',
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: '900',
     color: '#0F172A',
     letterSpacing: -0.3,
   },
+  textDark: {
+    color: '#F8FAFC',
+  },
   headerSub: {
     fontSize: 11,
     color: '#64748B',
     marginTop: 2,
+  },
+  subDark: {
+    color: '#94A3B8',
   },
   scrollBody: {
     flex: 1,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar } from 'react-native';
 import { Home, Activity, Bot, Info, AlertOctagon } from 'lucide-react-native';
 import { ResponsiveLayout } from '../components/ResponsiveLayout';
@@ -15,6 +15,7 @@ import { DisasterModeModal } from '../components/DisasterModeModal';
 import { sensorService } from '../sensors/SensorService';
 import { telemetryStore } from '../telemetry/TelemetryStore';
 import { DisasterModeType, DemoScenarioKey } from '../types';
+import { themeStore } from '../theme/ThemeStore';
 
 export type PrimaryTab = 'Home' | 'Progress' | 'AICoach' | 'About';
 export type SubScreen = 'None' | 'Privacy' | 'BLE' | 'Architecture' | 'EmergencyOverlay';
@@ -26,6 +27,18 @@ export const RootNavigator: React.FC = () => {
   const [showDemoModal, setShowDemoModal] = useState<boolean>(false);
   const [showDisasterModal, setShowDisasterModal] = useState<boolean>(false);
   const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    const unsub = themeStore.subscribe((m) => {
+      setThemeMode(m);
+    });
+    return unsub;
+  }, []);
+
+  const isDark = themeMode === 'dark';
+  const activeColor = isDark ? '#38BDF8' : '#0D9488';
+  const inactiveColor = isDark ? '#64748B' : '#94A3B8';
 
   const handleSelectScenario = (key: DemoScenarioKey) => {
     sensorService.enableDemoMode(key);
@@ -87,8 +100,8 @@ export const RootNavigator: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safeContainer}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+    <SafeAreaView style={[styles.safeContainer, isDark && styles.safeContainerDark]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0F172A' : '#F8FAFC'} />
 
       <ResponsiveLayout maxWidth={440}>
         {/* Main Viewport */}
@@ -98,15 +111,15 @@ export const RootNavigator: React.FC = () => {
 
         {/* 4 Primary Bottom Navigation Tabs */}
         {activeSubScreen === 'None' && (
-          <View style={styles.bottomBar}>
+          <View style={[styles.bottomBar, isDark && styles.bottomBarDark]}>
             <TouchableOpacity
               style={styles.tabItem}
               onPress={() => setActiveTab('Home')}
               activeOpacity={0.7}
             >
-              <Home color={activeTab === 'Home' ? '#0D9488' : '#94A3B8'} size={20} />
-              <Text style={[styles.tabLabel, activeTab === 'Home' && styles.tabLabelActive]}>Home</Text>
-              {activeTab === 'Home' && <View style={styles.activeDot} />}
+              <Home color={activeTab === 'Home' ? activeColor : inactiveColor} size={20} />
+              <Text style={[styles.tabLabel, isDark && styles.tabLabelDark, activeTab === 'Home' && { color: activeColor, fontWeight: '800' }]}>Home</Text>
+              {activeTab === 'Home' && <View style={[styles.activeDot, { backgroundColor: activeColor }]} />}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -114,9 +127,9 @@ export const RootNavigator: React.FC = () => {
               onPress={() => setActiveTab('Progress')}
               activeOpacity={0.7}
             >
-              <Activity color={activeTab === 'Progress' ? '#0D9488' : '#94A3B8'} size={20} />
-              <Text style={[styles.tabLabel, activeTab === 'Progress' && styles.tabLabelActive]}>Progress</Text>
-              {activeTab === 'Progress' && <View style={styles.activeDot} />}
+              <Activity color={activeTab === 'Progress' ? activeColor : inactiveColor} size={20} />
+              <Text style={[styles.tabLabel, isDark && styles.tabLabelDark, activeTab === 'Progress' && { color: activeColor, fontWeight: '800' }]}>Progress</Text>
+              {activeTab === 'Progress' && <View style={[styles.activeDot, { backgroundColor: activeColor }]} />}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -124,9 +137,9 @@ export const RootNavigator: React.FC = () => {
               onPress={() => setActiveTab('AICoach')}
               activeOpacity={0.7}
             >
-              <Bot color={activeTab === 'AICoach' ? '#0D9488' : '#94A3B8'} size={20} />
-              <Text style={[styles.tabLabel, activeTab === 'AICoach' && styles.tabLabelActive]}>AI Coach</Text>
-              {activeTab === 'AICoach' && <View style={styles.activeDot} />}
+              <Bot color={activeTab === 'AICoach' ? activeColor : inactiveColor} size={20} />
+              <Text style={[styles.tabLabel, isDark && styles.tabLabelDark, activeTab === 'AICoach' && { color: activeColor, fontWeight: '800' }]}>AI Coach</Text>
+              {activeTab === 'AICoach' && <View style={[styles.activeDot, { backgroundColor: activeColor }]} />}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -134,9 +147,9 @@ export const RootNavigator: React.FC = () => {
               onPress={() => setActiveTab('About')}
               activeOpacity={0.7}
             >
-              <Info color={activeTab === 'About' ? '#0D9488' : '#94A3B8'} size={20} />
-              <Text style={[styles.tabLabel, activeTab === 'About' && styles.tabLabelActive]}>About</Text>
-              {activeTab === 'About' && <View style={styles.activeDot} />}
+              <Info color={activeTab === 'About' ? activeColor : inactiveColor} size={20} />
+              <Text style={[styles.tabLabel, isDark && styles.tabLabelDark, activeTab === 'About' && { color: activeColor, fontWeight: '800' }]}>About</Text>
+              {activeTab === 'About' && <View style={[styles.activeDot, { backgroundColor: activeColor }]} />}
             </TouchableOpacity>
           </View>
         )}
@@ -165,6 +178,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F1F5F9',
   },
+  safeContainerDark: {
+    backgroundColor: '#070D1A',
+  },
   contentArea: {
     flex: 1,
   },
@@ -176,6 +192,10 @@ const styles = StyleSheet.create({
     borderTopColor: '#E2E8F0',
     justifyContent: 'space-around',
     alignItems: 'center',
+  },
+  bottomBarDark: {
+    backgroundColor: '#0F172A',
+    borderTopColor: '#1E293B',
   },
   tabItem: {
     alignItems: 'center',
@@ -189,9 +209,8 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 2,
   },
-  tabLabelActive: {
-    color: '#0D9488',
-    fontWeight: '800',
+  tabLabelDark: {
+    color: '#64748B',
   },
   activeDot: {
     width: 4,

@@ -23,6 +23,8 @@ import { HydraXTelemetry, DeviceConnectionState, MotionType } from '../telemetry
 import { DisasterModeType, DemoScenarioKey, ExplainableRiskResult, HealthMetrics, EnvironmentalMetrics } from '../types';
 import { Cpu, ShieldCheck, Bluetooth } from 'lucide-react-native';
 
+import { themeStore } from '../theme/ThemeStore';
+
 interface HomeScreenProps {
   onOpenArchitecture: () => void;
   onOpenPrivacy: () => void;
@@ -39,9 +41,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [telemetry, setTelemetry] = useState<HydraXTelemetry | null>(null);
   const [connState, setConnState] = useState<DeviceConnectionState>(telemetryStore.getSnapshot().state);
   const [waterConsumed, setWaterConsumed] = useState<number>(1.75);
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
 
   const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
   const [isOffline, setIsOffline] = useState<boolean>(false);
+
+  useEffect(() => {
+    const unsubTheme = themeStore.subscribe((m) => {
+      setThemeMode(m);
+    });
+    return unsubTheme;
+  }, []);
+
+  const isDark = themeMode === 'dark';
 
   // Modals
   const [showDemoCenter, setShowDemoCenter] = useState<boolean>(false);
@@ -134,7 +146,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       <Header
         userName={defaultUserProfile.name}
         isOffline={isOffline}
@@ -264,6 +276,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
+  },
+  containerDark: {
+    backgroundColor: '#070D1A',
   },
   scrollBody: {
     flex: 1,
