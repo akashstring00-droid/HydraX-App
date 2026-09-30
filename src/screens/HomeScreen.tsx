@@ -209,19 +209,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
           {/* Quick Action Shortcuts */}
           <View style={styles.quickActionsRow}>
-            <TouchableOpacity style={styles.actionChip} onPress={onOpenBLE} activeOpacity={0.75}>
+            <TouchableOpacity style={[styles.actionChip, isDark && styles.actionChipDark]} onPress={onOpenBLE} activeOpacity={0.75}>
               <Bluetooth color="#0D9488" size={14} />
-              <Text style={styles.actionChipText}>ESP32 Device</Text>
+              <Text style={[styles.actionChipText, isDark && styles.actionChipTextDark]}>ESP32 Device</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionChip} onPress={onOpenArchitecture} activeOpacity={0.75}>
+            <TouchableOpacity style={[styles.actionChip, isDark && styles.actionChipDark]} onPress={onOpenArchitecture} activeOpacity={0.75}>
               <Cpu color="#0D9488" size={14} />
-              <Text style={styles.actionChipText}>Pipeline</Text>
+              <Text style={[styles.actionChipText, isDark && styles.actionChipTextDark]}>Pipeline</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionChip} onPress={onOpenPrivacy} activeOpacity={0.75}>
+            <TouchableOpacity style={[styles.actionChip, isDark && styles.actionChipDark]} onPress={onOpenPrivacy} activeOpacity={0.75}>
               <ShieldCheck color="#0D9488" size={14} />
-              <Text style={styles.actionChipText}>Privacy</Text>
+              <Text style={[styles.actionChipText, isDark && styles.actionChipTextDark]}>Privacy</Text>
             </TouchableOpacity>
           </View>
 
@@ -306,9 +306,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  actionChipDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
   actionChipText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#0F172A',
   },
+  actionChipTextDark: {
+    color: '#F8FAFC',
+  },
 });
+

@@ -34,6 +34,23 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isDark = themeMode === 'dark';
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'Good morning';
+    if (hour >= 12 && hour < 17) return 'Good afternoon';
+    if (hour >= 17 && hour < 22) return 'Good evening';
+    return 'Good night';
+  };
+
+  const getInitials = (name: string) => {
+    if (!name) return 'HX';
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
       {/* Top Bar */}
@@ -41,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Left Branding & Avatar */}
         <View style={styles.leftGroup}>
           <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>AK</Text>
+            <Text style={styles.avatarText}>{getInitials(userName)}</Text>
           </View>
           <View>
             <View style={styles.brandTitleRow}>
@@ -51,9 +68,10 @@ export const Header: React.FC<HeaderProps> = ({
                 <Text style={styles.edgeBadgeText}>Local AI</Text>
               </View>
             </View>
-            <Text style={[styles.greetingText, isDark && styles.subDark]}>Good morning, {userName}</Text>
+            <Text style={[styles.greetingText, isDark && styles.subDark]}>{getGreeting()}, {userName}</Text>
           </View>
         </View>
+
 
         {/* Right Actions */}
         <View style={styles.rightActions}>
