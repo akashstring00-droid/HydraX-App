@@ -140,13 +140,6 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
               <ChevronRight color="#94A3B8" size={18} />
             </View>
           </TouchableOpacity>
-
-          {/* SYSTEM INFO FOOTER */}
-          <View style={styles.footerBox}>
-            <Info color="#94A3B8" size={16} />
-            <Text style={styles.footerTitle}>HydraX SIH 2026 • Medical Tech Companion</Text>
-            <Text style={styles.footerSub}>Built for Smart India Hackathon 2026 • ESP32 BLE Integration</Text>
-          </View>
         </View>
 
         <View style={{ height: 25 }} />
