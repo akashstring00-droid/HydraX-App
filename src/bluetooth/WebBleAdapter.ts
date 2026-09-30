@@ -55,26 +55,25 @@ export class WebBleAdapter {
 
       let selectedDevice: any = null;
 
-      // Primary Strategy: Named Filter (HydraX-Health, HydraX, ESP32)
+      // Single Universal Scan Dialog (Supported 100% on both Mobile & Desktop Chrome)
       try {
+        selectedDevice = await navBt.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: allowedServices,
+        });
+      } catch (err1: any) {
+        if (err1.message?.includes('User cancelled') || err1.message?.includes('cancel')) {
+          throw err1;
+        }
+
+        console.log('[WebBleAdapter] acceptAllDevices scan fallback trying named filters...', err1);
+
         selectedDevice = await navBt.requestDevice({
           filters: [
             { name: BLE_CONFIG.deviceName },
             { namePrefix: 'HydraX' },
             { namePrefix: 'ESP32' },
           ],
-          optionalServices: allowedServices,
-        });
-      } catch (err: any) {
-        if (err.name === 'NotFoundError' || err.message?.includes('User cancelled') || err.message?.includes('cancel')) {
-          throw err;
-        }
-
-        console.log('[WebBleAdapter] Filter strategy returned no match, trying acceptAllDevices popup...', err);
-
-        // Fallback Strategy: Accept All Devices
-        selectedDevice = await navBt.requestDevice({
-          acceptAllDevices: true,
           optionalServices: allowedServices,
         });
       }
