@@ -12,7 +12,7 @@ export const ArchitectureScreen: React.FC<ArchitectureScreenProps> = ({ onBack }
       {/* Top Header */}
       <View style={styles.topHeader}>
         <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          <ArrowLeft color="#F8FAFC" size={20} />
+          <ArrowLeft color="#0F172A" size={20} />
         </TouchableOpacity>
         <View style={styles.headerTextGroup}>
           <Text style={styles.headerTitle}>HOW HYDRAX WORKS</Text>
@@ -24,7 +24,7 @@ export const ArchitectureScreen: React.FC<ArchitectureScreenProps> = ({ onBack }
         {/* Hackathon Core Banner */}
         <View style={styles.bannerCard}>
           <View style={styles.bannerRow}>
-            <Cpu color="#34D399" size={22} />
+            <Cpu color="#0D9488" size={22} />
             <Text style={styles.bannerTitle}>DISASTER-RESILIENT ARCHITECTURE</Text>
           </View>
           <Text style={styles.bannerDesc}>
@@ -46,7 +46,7 @@ export const ArchitectureScreen: React.FC<ArchitectureScreenProps> = ({ onBack }
           </Text>
         </View>
 
-        <View style={styles.arrowRow}><ChevronDown color="#38BDF8" size={20} /></View>
+        <View style={styles.arrowRow}><ChevronDown color="#0EA5E9" size={20} /></View>
 
         {/* Step 2 */}
         <View style={styles.pipelineCard}>
@@ -59,7 +59,7 @@ export const ArchitectureScreen: React.FC<ArchitectureScreenProps> = ({ onBack }
           </Text>
         </View>
 
-        <View style={styles.arrowRow}><ChevronDown color="#38BDF8" size={20} /></View>
+        <View style={styles.arrowRow}><ChevronDown color="#0EA5E9" size={20} /></View>
 
         {/* Step 3 */}
         <View style={styles.pipelineCard}>
@@ -72,7 +72,7 @@ export const ArchitectureScreen: React.FC<ArchitectureScreenProps> = ({ onBack }
           </Text>
         </View>
 
-        <View style={styles.arrowRow}><ChevronDown color="#38BDF8" size={20} /></View>
+        <View style={styles.arrowRow}><ChevronDown color="#0EA5E9" size={20} /></View>
 
         {/* Step 4 */}
         <View style={styles.pipelineCard}>
@@ -85,7 +85,7 @@ export const ArchitectureScreen: React.FC<ArchitectureScreenProps> = ({ onBack }
           </Text>
         </View>
 
-        <View style={styles.arrowRow}><ChevronDown color="#38BDF8" size={20} /></View>
+        <View style={styles.arrowRow}><ChevronDown color="#0EA5E9" size={20} /></View>
 
         {/* Step 5 */}
         <View style={styles.pipelineCard}>
@@ -98,7 +98,7 @@ export const ArchitectureScreen: React.FC<ArchitectureScreenProps> = ({ onBack }
           </Text>
         </View>
 
-        <View style={styles.arrowRow}><ChevronDown color="#38BDF8" size={20} /></View>
+        <View style={styles.arrowRow}><ChevronDown color="#0EA5E9" size={20} /></View>
 
         {/* Step 6 */}
         <View style={styles.pipelineCard}>
@@ -120,7 +120,7 @@ export const ArchitectureScreen: React.FC<ArchitectureScreenProps> = ({ onBack }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B132B',
+    backgroundColor: '#F8FAFC',
   },
   topHeader: {
     flexDirection: 'row',
@@ -129,14 +129,15 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(51, 65, 85, 0.5)',
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
     gap: 12,
   },
   backButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -146,12 +147,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#F8FAFC',
+    color: '#0F172A',
     letterSpacing: 0.5,
   },
   headerSub: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
   },
   scrollBody: {
     flex: 1,
@@ -159,12 +160,12 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   bannerCard: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    backgroundColor: 'rgba(13, 148, 136, 0.08)',
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderColor: 'rgba(13, 148, 136, 0.25)',
   },
   bannerRow: {
     flexDirection: 'row',
@@ -174,28 +175,33 @@ const styles = StyleSheet.create({
   bannerTitle: {
     fontSize: 12,
     fontWeight: '900',
-    color: '#34D399',
+    color: '#0D9488',
     letterSpacing: 0.8,
   },
   bannerDesc: {
     fontSize: 12,
-    color: '#CBD5E1',
+    color: '#334155',
     marginTop: 6,
     lineHeight: 17,
   },
   sectionHeader: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#38BDF8',
+    color: '#0EA5E9',
     letterSpacing: 0.8,
     marginBottom: 12,
   },
   pipelineCard: {
-    backgroundColor: '#131C35',
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#233055',
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   stepHeader: {
     flexDirection: 'row',
@@ -218,11 +224,11 @@ const styles = StyleSheet.create({
   stepTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   stepDesc: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: '#64748B',
     marginTop: 6,
     lineHeight: 16,
   },
