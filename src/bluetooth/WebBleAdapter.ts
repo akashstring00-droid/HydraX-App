@@ -41,33 +41,45 @@ export class WebBleAdapter {
       });
 
       const navBt = (navigator as any).bluetooth;
-      const serviceUuidLower = BLE_CONFIG.serviceUuid.toLowerCase();
-      const charUuidLower = BLE_CONFIG.characteristicUuid.toLowerCase();
 
-      // W3C Web Bluetooth Standard Request Device Options for Mobile & Desktop Chrome
+      const serviceUuidLower = BLE_CONFIG.serviceUuid.toLowerCase();
+      const serviceUuidUpper = BLE_CONFIG.serviceUuid.toUpperCase();
+      const charUuidLower = BLE_CONFIG.characteristicUuid.toLowerCase();
+      const charUuidUpper = BLE_CONFIG.characteristicUuid.toUpperCase();
+
+      // List of allowed services for Chrome Desktop Web Bluetooth security policy
+      const allowedServices = [
+        serviceUuidLower,
+        serviceUuidUpper,
+        '00007d8a-0000-1000-8000-00805f9b34fb',
+        '0000180d-0000-1000-8000-00805f9b34fb', // Heart rate standard
+        '0000181a-0000-1000-8000-00805f9b34fb', // Environmental sensing
+        '0000180f-0000-1000-8000-00805f9b34fb', // Battery service
+      ];
+
       let selectedDevice: any = null;
 
+      // Strategy 1: Attempt exact name & service filter request
       try {
-        // Attempt 1: Filter by Name or Prefix
         selectedDevice = await navBt.requestDevice({
           filters: [
             { name: BLE_CONFIG.deviceName },
             { namePrefix: 'HydraX' },
             { namePrefix: 'ESP32' },
           ],
-          optionalServices: [serviceUuidLower],
+          optionalServices: allowedServices,
         });
       } catch (err: any) {
         if (err.name === 'NotFoundError' || err.message?.includes('User cancelled')) {
           throw err;
         }
 
-        console.log('[WebBleAdapter] Named filter returned no device, requesting acceptAllDevices popup...', err);
+        console.log('[WebBleAdapter] Named filter returned no device, opening universal acceptAllDevices dialog...', err);
 
-        // Attempt 2: Universal Accept All Devices Popup (Supported on both Mobile & Desktop Chrome)
+        // Strategy 2: Accept all devices (shows all Bluetooth peripherals in Chrome picker)
         selectedDevice = await navBt.requestDevice({
           acceptAllDevices: true,
-          optionalServices: [serviceUuidLower],
+          optionalServices: allowedServices,
         });
       }
 
@@ -85,38 +97,58 @@ export class WebBleAdapter {
       // Connect to GATT Server
       this.gattServer = await this.device.gatt.connect();
 
-      // Service & Characteristic Discovery
+      // 150ms delay for Windows/Mac Bluetooth GATT driver database sync
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Discover Primary Service safely from allowedServices list
+      let service: any = null;
+      for (const uuid of allowedServices) {
+        try {
+          service = await this.gattServer.getPrimaryService(uuid);
+          if (service) break;
+        } catch (_) {}
+      }
+
+      if (!service) {
+        // Fallback service lookup
+        try {
+          const services = await this.gattServer.getPrimaryServices();
+          if (services && services.length > 0) {
+            service = services[0];
+          }
+        } catch (e) {
+          console.warn('[WebBleAdapter] getPrimaryServices() fallback error:', e);
+        }
+      }
+
+      if (!service) {
+        throw new Error(`GATT Primary Service ${BLE_CONFIG.serviceUuid} not accessible on device.`);
+      }
+
+      // Discover Characteristic safely
       let targetChar: any = null;
-
       try {
-        const service = await this.gattServer.getPrimaryService(serviceUuidLower);
         targetChar = await service.getCharacteristic(charUuidLower);
-      } catch (e) {
-        console.log('[WebBleAdapter] Explicit UUID lookup fallback, scanning GATT services...', e);
-
-        // Dynamic fallback: scan all primary services for notification characteristic
-        const services = await this.gattServer.getPrimaryServices();
-        for (const s of services) {
+      } catch (e1) {
+        try {
+          targetChar = await service.getCharacteristic(charUuidUpper);
+        } catch (e2) {
           try {
-            const chars = await s.getCharacteristics();
-            for (const c of chars) {
-              if (c.properties.notify || c.properties.indicate) {
-                targetChar = c;
-                break;
-              }
-            }
-          } catch (_) {}
-          if (targetChar) break;
+            const characteristics = await service.getCharacteristics();
+            targetChar = characteristics.find((c: any) => c.properties.notify || c.properties.indicate) || characteristics[0];
+          } catch (e3) {
+            console.warn('[WebBleAdapter] Characteristic lookup error:', e3);
+          }
         }
       }
 
       if (!targetChar) {
-        throw new Error('Connected to BLE device, but no notification GATT characteristic was found.');
+        throw new Error(`GATT Characteristic ${BLE_CONFIG.characteristicUuid} not found.`);
       }
 
       this.characteristic = targetChar;
 
-      // Subscribe to 1Hz telemetry notifications
+      // Subscribe to notifications
       await this.characteristic.startNotifications();
       this.characteristic.addEventListener(
         'characteristicvaluechanged',
@@ -142,12 +174,14 @@ export class WebBleAdapter {
       console.error('[WebBleAdapter] Bluetooth connection error:', err);
       const isUserCancel = err.name === 'NotFoundError' || err.message?.includes('User cancelled') || err.message?.includes('cancel');
 
+      const detailedMsg = isUserCancel
+        ? 'Bluetooth pair request canceled by user.'
+        : `Connection Error: ${err.message || 'GATT pair failed'}`;
+
       telemetryStore.setConnectionState({
         connected: false,
         connecting: false,
-        connectionError: isUserCancel
-          ? 'Bluetooth pairing canceled by user.'
-          : (err.message || 'Bluetooth connection failed. Ensure Bluetooth is ON on your device.'),
+        connectionError: detailedMsg,
       });
       return false;
     }
