@@ -42,24 +42,20 @@ export class WebBleAdapter {
 
       const navBt = (navigator as any).bluetooth;
 
-      const serviceUuidLower = BLE_CONFIG.serviceUuid.toLowerCase();
-      const serviceUuidUpper = BLE_CONFIG.serviceUuid.toUpperCase();
-      const charUuidLower = BLE_CONFIG.characteristicUuid.toLowerCase();
-      const charUuidUpper = BLE_CONFIG.characteristicUuid.toUpperCase();
+      // Chrome W3C Web Bluetooth strict requirement: ALL UUIDs must be lowercased strings
+      const targetServiceUuid = BLE_CONFIG.serviceUuid.toLowerCase().trim();
+      const targetCharUuid = BLE_CONFIG.characteristicUuid.toLowerCase().trim();
 
-      // List of allowed services for Chrome Desktop Web Bluetooth security policy
       const allowedServices = [
-        serviceUuidLower,
-        serviceUuidUpper,
+        targetServiceUuid,
         '00007d8a-0000-1000-8000-00805f9b34fb',
-        '0000180d-0000-1000-8000-00805f9b34fb', // Heart rate standard
-        '0000181a-0000-1000-8000-00805f9b34fb', // Environmental sensing
-        '0000180f-0000-1000-8000-00805f9b34fb', // Battery service
+        '0000180d-0000-1000-8000-00805f9b34fb', // Standard Heart Rate
+        '0000181a-0000-1000-8000-00805f9b34fb', // Standard Environmental
       ];
 
       let selectedDevice: any = null;
 
-      // Strategy 1: Attempt exact name & service filter request
+      // Request Device Popup (W3C Web Bluetooth standard)
       try {
         selectedDevice = await navBt.requestDevice({
           filters: [
@@ -70,13 +66,13 @@ export class WebBleAdapter {
           optionalServices: allowedServices,
         });
       } catch (err: any) {
-        if (err.name === 'NotFoundError' || err.message?.includes('User cancelled')) {
+        if (err.name === 'NotFoundError' || err.message?.includes('User cancelled') || err.message?.includes('cancel')) {
           throw err;
         }
 
-        console.log('[WebBleAdapter] Named filter returned no device, opening universal acceptAllDevices dialog...', err);
+        console.log('[WebBleAdapter] Filter strategy returned no match, opening acceptAllDevices dialog...', err);
 
-        // Strategy 2: Accept all devices (shows all Bluetooth peripherals in Chrome picker)
+        // Fallback popup if ESP32 device name is untagged in advertising header
         selectedDevice = await navBt.requestDevice({
           acceptAllDevices: true,
           optionalServices: allowedServices,
@@ -97,10 +93,10 @@ export class WebBleAdapter {
       // Connect to GATT Server
       this.gattServer = await this.device.gatt.connect();
 
-      // 150ms delay for Windows/Mac Bluetooth GATT driver database sync
+      // 150ms buffer for Windows/Mac GATT driver initialization
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // Discover Primary Service safely from allowedServices list
+      // Primary Service Discovery
       let service: any = null;
       for (const uuid of allowedServices) {
         try {
@@ -110,45 +106,29 @@ export class WebBleAdapter {
       }
 
       if (!service) {
-        // Fallback service lookup
-        try {
-          const services = await this.gattServer.getPrimaryServices();
-          if (services && services.length > 0) {
-            service = services[0];
-          }
-        } catch (e) {
-          console.warn('[WebBleAdapter] getPrimaryServices() fallback error:', e);
-        }
+        throw new Error(`GATT Primary Service ${targetServiceUuid} not found or inaccessible.`);
       }
 
-      if (!service) {
-        throw new Error(`GATT Primary Service ${BLE_CONFIG.serviceUuid} not accessible on device.`);
-      }
-
-      // Discover Characteristic safely
+      // Characteristic Discovery
       let targetChar: any = null;
       try {
-        targetChar = await service.getCharacteristic(charUuidLower);
+        targetChar = await service.getCharacteristic(targetCharUuid);
       } catch (e1) {
         try {
-          targetChar = await service.getCharacteristic(charUuidUpper);
+          const characteristics = await service.getCharacteristics();
+          targetChar = characteristics.find((c: any) => c.properties.notify || c.properties.indicate) || characteristics[0];
         } catch (e2) {
-          try {
-            const characteristics = await service.getCharacteristics();
-            targetChar = characteristics.find((c: any) => c.properties.notify || c.properties.indicate) || characteristics[0];
-          } catch (e3) {
-            console.warn('[WebBleAdapter] Characteristic lookup error:', e3);
-          }
+          console.warn('[WebBleAdapter] Characteristic discovery error:', e2);
         }
       }
 
       if (!targetChar) {
-        throw new Error(`GATT Characteristic ${BLE_CONFIG.characteristicUuid} not found.`);
+        throw new Error(`GATT Characteristic ${targetCharUuid} not found.`);
       }
 
       this.characteristic = targetChar;
 
-      // Subscribe to notifications
+      // Subscribe to 1Hz notifications
       await this.characteristic.startNotifications();
       this.characteristic.addEventListener(
         'characteristicvaluechanged',
