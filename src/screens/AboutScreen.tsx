@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
-import { ShieldCheck, Bluetooth, Cpu, AlertOctagon, Info, ChevronRight, Zap, RefreshCw, Sun, Moon } from 'lucide-react-native';
+import { ShieldCheck, Bluetooth, Cpu, AlertOctagon, Info, ChevronRight, Zap, RefreshCw, Sun, Moon, User, LogOut } from 'lucide-react-native';
 import { sensorService } from '../sensors/SensorService';
 import { telemetryStore } from '../telemetry/TelemetryStore';
 import { DeviceConnectionState } from '../telemetry/telemetryTypes';
 import { DisasterModeType, DemoScenarioKey } from '../types';
 import { themeStore } from '../theme/ThemeStore';
+import { authStore, AuthUser } from '../auth/AuthStore';
 
 interface AboutScreenProps {
   onOpenBLE: () => void;
@@ -25,6 +26,7 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
   const [connState, setConnState] = useState<DeviceConnectionState>(telemetryStore.getSnapshot().state);
   const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
   const [themeMode, setThemeMode] = useState(themeStore.getMode());
+  const [authUser, setAuthUser] = useState<AuthUser | null>(authStore.getAuthUser());
 
   useEffect(() => {
     const unsubTelemetry = telemetryStore.subscribe((_, s) => {
@@ -33,9 +35,13 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
     const unsubTheme = themeStore.subscribe((m) => {
       setThemeMode(m);
     });
+    const unsubAuth = authStore.subscribe((user) => {
+      setAuthUser(user);
+    });
     return () => {
       unsubTelemetry();
       unsubTheme();
+      unsubAuth();
     };
   }, []);
 
@@ -59,6 +65,28 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
 
       <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
         <View style={styles.contentPadding}>
+          {/* USER ACCOUNT CARD */}
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>ACTIVE ACCOUNT</Text>
+          <View style={[styles.card, isDark && styles.cardDark]}>
+            <View style={styles.cardRow}>
+              <View style={[styles.iconCircle, { backgroundColor: 'rgba(13, 148, 136, 0.15)' }]}>
+                <User color="#0D9488" size={18} />
+              </View>
+              <View style={styles.cardTextCol}>
+                <Text style={[styles.cardTitle, isDark && styles.cardTitleDark]}>
+                  {authUser?.name || 'Akash'}
+                </Text>
+                <Text style={[styles.cardSub, isDark && styles.cardSubDark]}>
+                  {authUser?.email || 'akash@hydrax.ai'}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.logoutBtn} onPress={() => authStore.logout()} activeOpacity={0.8}>
+                <LogOut color="#EF4444" size={14} />
+                <Text style={styles.logoutText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           {/* HARDWARE DEVICE CARD */}
           <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>CONNECTED HARDWARE</Text>
           <TouchableOpacity style={[styles.card, isDark && styles.cardDark]} onPress={onOpenBLE} activeOpacity={0.75}>
@@ -279,6 +307,20 @@ const styles = StyleSheet.create({
   cardSubDark: {
     color: '#94A3B8',
   },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  logoutText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
   scenarioBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -314,3 +356,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+

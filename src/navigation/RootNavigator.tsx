@@ -10,12 +10,14 @@ import { EmergencyScreen } from '../screens/EmergencyScreen';
 import { PrivacyCenterScreen } from '../screens/PrivacyCenterScreen';
 import { WearableConnectScreen } from '../screens/WearableConnectScreen';
 import { ArchitectureScreen } from '../screens/ArchitectureScreen';
+import { AuthScreen } from '../screens/AuthScreen';
 import { DemoCenterModal } from '../components/DemoCenterModal';
 import { DisasterModeModal } from '../components/DisasterModeModal';
 import { sensorService } from '../sensors/SensorService';
 import { telemetryStore } from '../telemetry/TelemetryStore';
 import { DisasterModeType, DemoScenarioKey } from '../types';
 import { themeStore } from '../theme/ThemeStore';
+import { authStore, AuthUser } from '../auth/AuthStore';
 
 export type PrimaryTab = 'Home' | 'Progress' | 'AICoach' | 'About';
 export type SubScreen = 'None' | 'Privacy' | 'BLE' | 'Architecture' | 'EmergencyOverlay';
@@ -28,12 +30,19 @@ export const RootNavigator: React.FC = () => {
   const [showDisasterModal, setShowDisasterModal] = useState<boolean>(false);
   const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
   const [themeMode, setThemeMode] = useState(themeStore.getMode());
+  const [authUser, setAuthUser] = useState<AuthUser | null>(authStore.getAuthUser());
 
   useEffect(() => {
-    const unsub = themeStore.subscribe((m) => {
+    const unsubTheme = themeStore.subscribe((m) => {
       setThemeMode(m);
     });
-    return unsub;
+    const unsubAuth = authStore.subscribe((user) => {
+      setAuthUser(user);
+    });
+    return () => {
+      unsubTheme();
+      unsubAuth();
+    };
   }, []);
 
   const isDark = themeMode === 'dark';
@@ -50,6 +59,10 @@ export const RootNavigator: React.FC = () => {
   };
 
   const renderScreen = () => {
+    if (!authUser) {
+      return <AuthScreen />;
+    }
+
     if (activeSubScreen === 'Privacy') {
       return <PrivacyCenterScreen onBack={() => setActiveSubScreen('None')} />;
     }
@@ -67,6 +80,7 @@ export const RootNavigator: React.FC = () => {
       case 'Home':
         return (
           <HomeScreen
+            userName={authUser.name}
             onOpenArchitecture={() => setActiveSubScreen('Architecture')}
             onOpenPrivacy={() => setActiveSubScreen('Privacy')}
             onOpenBLE={() => setActiveSubScreen('BLE')}
@@ -90,6 +104,7 @@ export const RootNavigator: React.FC = () => {
       default:
         return (
           <HomeScreen
+            userName={authUser.name}
             onOpenArchitecture={() => setActiveSubScreen('Architecture')}
             onOpenPrivacy={() => setActiveSubScreen('Privacy')}
             onOpenBLE={() => setActiveSubScreen('BLE')}
@@ -109,8 +124,8 @@ export const RootNavigator: React.FC = () => {
           {renderScreen()}
         </View>
 
-        {/* 4 Primary Bottom Navigation Tabs */}
-        {activeSubScreen === 'None' && (
+        {/* 4 Primary Bottom Navigation Tabs (Visible ONLY when logged in) */}
+        {authUser && activeSubScreen === 'None' && (
           <View style={[styles.bottomBar, isDark && styles.bottomBarDark]}>
             <TouchableOpacity
               style={styles.tabItem}
@@ -172,6 +187,7 @@ export const RootNavigator: React.FC = () => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   safeContainer: {

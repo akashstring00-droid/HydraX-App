@@ -26,6 +26,7 @@ import { Cpu, ShieldCheck, Bluetooth } from 'lucide-react-native';
 import { themeStore } from '../theme/ThemeStore';
 
 interface HomeScreenProps {
+  userName?: string;
   onOpenArchitecture: () => void;
   onOpenPrivacy: () => void;
   onOpenBLE: () => void;
@@ -33,6 +34,7 @@ interface HomeScreenProps {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
+  userName,
   onOpenArchitecture,
   onOpenPrivacy,
   onOpenBLE,
@@ -42,6 +44,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [connState, setConnState] = useState<DeviceConnectionState>(telemetryStore.getSnapshot().state);
   const [waterConsumed, setWaterConsumed] = useState<number>(1.75);
   const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
 
   const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
   const [isOffline, setIsOffline] = useState<boolean>(false);
@@ -148,7 +151,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
       <Header
-        userName={defaultUserProfile.name}
+        userName={userName || defaultUserProfile.name}
         isOffline={isOffline}
         activeDisaster={disasterMode}
         onOpenDisasterModal={() => setShowDisasterModal(true)}
@@ -156,6 +159,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         onOpenArchitecture={onOpenArchitecture}
         onOpenSettings={() => setShowEdgeAISheet(true)}
       />
+
 
       <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
         <View style={styles.contentPadding}>
