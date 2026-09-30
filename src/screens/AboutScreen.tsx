@@ -50,44 +50,44 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       {/* Top Header */}
-      <View style={styles.topHeader}>
-        <Text style={styles.headerTitle}>About & Settings</Text>
-        <Text style={styles.headerSub}>HydraX Personal Risk Companion v2.0</Text>
+      <View style={[styles.topHeader, isDark && styles.topHeaderDark]}>
+        <Text style={[styles.headerTitle, isDark && styles.headerTitleDark]}>About & Settings</Text>
+        <Text style={[styles.headerSub, isDark && styles.headerSubDark]}>HydraX Personal Risk Companion v2.0</Text>
       </View>
 
       <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
         <View style={styles.contentPadding}>
           {/* HARDWARE DEVICE CARD */}
-          <Text style={styles.sectionHeader}>CONNECTED HARDWARE</Text>
-          <TouchableOpacity style={styles.card} onPress={onOpenBLE} activeOpacity={0.75}>
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>CONNECTED HARDWARE</Text>
+          <TouchableOpacity style={[styles.card, isDark && styles.cardDark]} onPress={onOpenBLE} activeOpacity={0.75}>
             <View style={styles.cardRow}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, isDark && styles.iconCircleDark]}>
                 <Bluetooth color="#0D9488" size={18} />
               </View>
               <View style={styles.cardTextCol}>
-                <Text style={styles.cardTitle}>
+                <Text style={[styles.cardTitle, isDark && styles.cardTitleDark]}>
                   {connState.isDemoMode ? 'HydraX-Demo-Sim (Simulator)' : connState.deviceName || 'HydraX-Health'}
                 </Text>
-                <Text style={styles.cardSub}>
+                <Text style={[styles.cardSub, isDark && styles.cardSubDark]}>
                   {connState.connected ? `Connected • ${connState.dataFreshness.toUpperCase()}` : 'Tap to pair ESP32 BLE Hardware'}
                 </Text>
               </View>
-              <ChevronRight color="#94A3B8" size={18} />
+              <ChevronRight color={isDark ? '#64748B' : '#94A3B8'} size={18} />
             </View>
           </TouchableOpacity>
 
           {/* APPEARANCE & THEME */}
-          <Text style={styles.sectionHeader}>APPEARANCE</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>APPEARANCE</Text>
+          <View style={[styles.card, isDark && styles.cardDark]}>
             <View style={styles.cardRow}>
               <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(14, 165, 233, 0.15)' : 'rgba(245, 158, 11, 0.1)' }]}>
                 {isDark ? <Moon color="#0EA5E9" size={18} /> : <Sun color="#F59E0B" size={18} />}
               </View>
               <View style={styles.cardTextCol}>
-                <Text style={styles.cardTitle}>{isDark ? 'Dark Theme' : 'Light Theme'}</Text>
-                <Text style={styles.cardSub}>{isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}</Text>
+                <Text style={[styles.cardTitle, isDark && styles.cardTitleDark]}>{isDark ? 'Dark Theme' : 'Light Theme'}</Text>
+                <Text style={[styles.cardSub, isDark && styles.cardSubDark]}>{isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}</Text>
               </View>
               <Switch
                 value={isDark}
@@ -99,15 +99,15 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
           </View>
 
           {/* DEMO MODE TOGGLE */}
-          <Text style={styles.sectionHeader}>DEMO & TESTING</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>DEMO & TESTING</Text>
+          <View style={[styles.card, isDark && styles.cardDark]}>
             <View style={styles.cardRow}>
               <View style={[styles.iconCircle, { backgroundColor: 'rgba(245, 158, 11, 0.1)' }]}>
                 <Zap color="#F59E0B" size={18} />
               </View>
               <View style={styles.cardTextCol}>
-                <Text style={styles.cardTitle}>Hackathon Demo Mode</Text>
-                <Text style={styles.cardSub}>Simulate Heat Wave, Dehydration & Fall Detection</Text>
+                <Text style={[styles.cardTitle, isDark && styles.cardTitleDark]}>Hackathon Demo Mode</Text>
+                <Text style={[styles.cardSub, isDark && styles.cardSubDark]}>Simulate Heat Wave, Dehydration & Fall Detection</Text>
               </View>
               <Switch
                 value={connState.isDemoMode}
@@ -128,46 +128,46 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
           </View>
 
           {/* DISASTER MODE SELECTOR */}
-          <Text style={styles.sectionHeader}>DISASTER MODE</Text>
-          <TouchableOpacity style={styles.card} onPress={onOpenDisasterModal} activeOpacity={0.75}>
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>DISASTER MODE</Text>
+          <TouchableOpacity style={[styles.card, isDark && styles.cardDark]} onPress={onOpenDisasterModal} activeOpacity={0.75}>
             <View style={styles.cardRow}>
               <View style={[styles.iconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
                 <AlertOctagon color="#EF4444" size={18} />
               </View>
               <View style={styles.cardTextCol}>
-                <Text style={styles.cardTitle}>Active Scenario Context</Text>
-                <Text style={styles.cardSub}>Current: {disasterMode} (Tap to switch)</Text>
+                <Text style={[styles.cardTitle, isDark && styles.cardTitleDark]}>Active Scenario Context</Text>
+                <Text style={[styles.cardSub, isDark && styles.cardSubDark]}>Current: {disasterMode} (Tap to switch)</Text>
               </View>
-              <ChevronRight color="#94A3B8" size={18} />
+              <ChevronRight color={isDark ? '#64748B' : '#94A3B8'} size={18} />
             </View>
           </TouchableOpacity>
 
           {/* ARCHITECTURE & PRIVACY */}
-          <Text style={styles.sectionHeader}>TECHNICAL & PRIVACY</Text>
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>TECHNICAL & PRIVACY</Text>
 
-          <TouchableOpacity style={styles.card} onPress={onOpenArchitecture} activeOpacity={0.75}>
+          <TouchableOpacity style={[styles.card, isDark && styles.cardDark]} onPress={onOpenArchitecture} activeOpacity={0.75}>
             <View style={styles.cardRow}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, isDark && styles.iconCircleDark]}>
                 <Cpu color="#0D9488" size={18} />
               </View>
               <View style={styles.cardTextCol}>
-                <Text style={styles.cardTitle}>6-Stage Data Pipeline</Text>
-                <Text style={styles.cardSub}>On-device noise filtering & risk engine details</Text>
+                <Text style={[styles.cardTitle, isDark && styles.cardTitleDark]}>6-Stage Data Pipeline</Text>
+                <Text style={[styles.cardSub, isDark && styles.cardSubDark]}>On-device noise filtering & risk engine details</Text>
               </View>
-              <ChevronRight color="#94A3B8" size={18} />
+              <ChevronRight color={isDark ? '#64748B' : '#94A3B8'} size={18} />
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.card} onPress={onOpenPrivacy} activeOpacity={0.75}>
+          <TouchableOpacity style={[styles.card, isDark && styles.cardDark]} onPress={onOpenPrivacy} activeOpacity={0.75}>
             <View style={styles.cardRow}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, isDark && styles.iconCircleDark]}>
                 <ShieldCheck color="#0D9488" size={18} />
               </View>
               <View style={styles.cardTextCol}>
-                <Text style={styles.cardTitle}>Zero-Trust Privacy Center</Text>
-                <Text style={styles.cardSub}>Local computation guarantee & permissions</Text>
+                <Text style={[styles.cardTitle, isDark && styles.cardTitleDark]}>Zero-Trust Privacy Center</Text>
+                <Text style={[styles.cardSub, isDark && styles.cardSubDark]}>Local computation guarantee & permissions</Text>
               </View>
-              <ChevronRight color="#94A3B8" size={18} />
+              <ChevronRight color={isDark ? '#64748B' : '#94A3B8'} size={18} />
             </View>
           </TouchableOpacity>
         </View>
@@ -183,6 +183,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
+  containerDark: {
+    backgroundColor: '#070D1A',
+  },
   topHeader: {
     paddingHorizontal: 16,
     paddingTop: 14,
@@ -191,16 +194,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
+  topHeaderDark: {
+    backgroundColor: '#0F172A',
+    borderBottomColor: '#1E293B',
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: '900',
     color: '#0F172A',
     letterSpacing: -0.3,
   },
+  headerTitleDark: {
+    color: '#F8FAFC',
+  },
   headerSub: {
     fontSize: 11,
     color: '#64748B',
     marginTop: 2,
+  },
+  headerSubDark: {
+    color: '#94A3B8',
   },
   scrollBody: {
     flex: 1,
@@ -217,12 +230,19 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginTop: 6,
   },
+  sectionHeaderDark: {
+    color: '#64748B',
+  },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  cardDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   cardRow: {
     flexDirection: 'row',
@@ -237,6 +257,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  iconCircleDark: {
+    backgroundColor: 'rgba(13, 148, 136, 0.2)',
+  },
   cardTextCol: {
     flex: 1,
   },
@@ -245,10 +268,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
   },
+  cardTitleDark: {
+    color: '#F8FAFC',
+  },
   cardSub: {
     fontSize: 11,
     color: '#64748B',
     marginTop: 2,
+  },
+  cardSubDark: {
+    color: '#94A3B8',
   },
   scenarioBtn: {
     flexDirection: 'row',

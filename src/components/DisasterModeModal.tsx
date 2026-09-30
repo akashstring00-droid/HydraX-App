@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from 'react-native';
 import { X, ShieldAlert, Sun, Wind, Droplet, Umbrella, CloudLightning, Activity, Check } from 'lucide-react-native';
 import { DisasterModeType } from '../types';
 import { disasterProfiles } from '../data/mockData';
+import { themeStore } from '../theme/ThemeStore';
 
 interface DisasterModeModalProps {
   visible: boolean;
@@ -27,21 +28,29 @@ export const DisasterModeModal: React.FC<DisasterModeModalProps> = ({
   activeDisaster,
   onSelectDisaster,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.header}>
+        <View style={[styles.modalContent, isDark && styles.modalContentDark]}>
+          <View style={[styles.header, isDark && styles.headerDark]}>
             <View style={styles.titleGroup}>
               <ShieldAlert color="#EF4444" size={22} />
               <View>
-                <Text style={styles.title}>DISASTER RESPONSE MODE</Text>
-                <Text style={styles.subtitle}>Re-prioritize Edge AI for environmental crises</Text>
+                <Text style={[styles.title, isDark && styles.titleDark]}>DISASTER RESPONSE MODE</Text>
+                <Text style={[styles.subtitle, isDark && styles.subtitleDark]}>Re-prioritize Edge AI for environmental crises</Text>
               </View>
             </View>
 
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X color="#94A3B8" size={20} />
+              <X color={isDark ? '#64748B' : '#94A3B8'} size={20} />
             </TouchableOpacity>
           </View>
 
@@ -54,7 +63,17 @@ export const DisasterModeModal: React.FC<DisasterModeModalProps> = ({
               return (
                 <TouchableOpacity
                   key={item.type}
-                  style={[styles.itemCard, isSelected && { borderColor: item.color, backgroundColor: '#FFFFFF', shadowColor: item.color, shadowOpacity: 0.15, elevation: 3 }]}
+                  style={[
+                    styles.itemCard, 
+                    isDark && styles.itemCardDark,
+                    isSelected && { 
+                      borderColor: item.color, 
+                      backgroundColor: isDark ? '#1E293B' : '#FFFFFF', 
+                      shadowColor: item.color, 
+                      shadowOpacity: 0.15, 
+                      elevation: 3 
+                    }
+                  ]}
                   onPress={() => {
                     onSelectDisaster(item.type);
                     onClose();
@@ -67,14 +86,14 @@ export const DisasterModeModal: React.FC<DisasterModeModalProps> = ({
 
                   <View style={styles.itemTextCol}>
                     <View style={styles.itemTitleRow}>
-                      <Text style={styles.itemLabel}>{item.label}</Text>
+                      <Text style={[styles.itemLabel, isDark && styles.itemLabelDark]}>{item.label}</Text>
                       {isSelected && (
                         <View style={[styles.activeTag, { backgroundColor: item.color }]}>
                           <Text style={styles.activeTagText}>ACTIVE</Text>
                         </View>
                       )}
                     </View>
-                    <Text style={styles.itemDesc} numberOfLines={2}>
+                    <Text style={[styles.itemDesc, isDark && styles.itemDescDark]} numberOfLines={2}>
                       {profile ? profile.environmentalNotice : 'Standard physiological baseline tracking.'}
                     </Text>
                   </View>
@@ -91,7 +110,7 @@ export const DisasterModeModal: React.FC<DisasterModeModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'flex-end',
   },
   modalContent: {
@@ -103,6 +122,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  modalContentDark: {
+    backgroundColor: '#0F172A',
+    borderColor: '#1E293B',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -110,6 +133,9 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
+  },
+  headerDark: {
+    borderBottomColor: '#1E293B',
   },
   titleGroup: {
     flexDirection: 'row',
@@ -122,9 +148,15 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     letterSpacing: 0.5,
   },
+  titleDark: {
+    color: '#F8FAFC',
+  },
   subtitle: {
     fontSize: 11,
     color: '#64748B',
+  },
+  subtitleDark: {
+    color: '#94A3B8',
   },
   closeBtn: {
     padding: 4,
@@ -142,6 +174,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 12,
+  },
+  itemCardDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   iconContainer: {
     width: 40,
@@ -163,6 +199,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
+  itemLabelDark: {
+    color: '#F8FAFC',
+  },
   activeTag: {
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -179,4 +218,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 15,
   },
+  itemDescDark: {
+    color: '#94A3B8',
+  },
 });
+

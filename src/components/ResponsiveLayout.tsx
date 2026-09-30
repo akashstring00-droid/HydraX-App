@@ -1,5 +1,6 @@
-import React from 'react';
-import { View, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { themeStore } from '../theme/ThemeStore';
 
 interface ResponsiveLayoutProps {
   children: React.ReactNode;
@@ -12,13 +13,21 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
 }) => {
   const { width, height } = useWindowDimensions();
   const isDesktop = width > 500;
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
 
   return (
-    <View style={styles.outerWrapper}>
+    <View style={[styles.outerWrapper, isDark && styles.outerWrapperDark]}>
       <View 
         style={[
           styles.innerContainer, 
-          isDesktop && { maxWidth, height: Math.min(height - 40, 920), ...styles.desktopFrame }
+          isDark && styles.innerContainerDark,
+          isDesktop && { maxWidth, height: Math.min(height - 40, 920), ...styles.desktopFrame, ...(isDark ? styles.desktopFrameDark : {}) }
         ]}
       >
         {children}
@@ -35,10 +44,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  outerWrapperDark: {
+    backgroundColor: '#070D1A',
+  },
   innerContainer: {
     flex: 1,
     width: '100%',
     backgroundColor: '#F8FAFC',
+  },
+  innerContainerDark: {
+    backgroundColor: '#070D1A',
   },
   desktopFrame: {
     borderRadius: 28,
@@ -52,4 +67,10 @@ const styles = StyleSheet.create({
     elevation: 8,
     marginVertical: 20,
   },
+  desktopFrameDark: {
+    borderColor: '#1E293B',
+    shadowColor: '#000000',
+    shadowOpacity: 0.5,
+  },
 });
+

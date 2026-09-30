@@ -212,26 +212,26 @@ export const AICoachScreen: React.FC = () => {
             <View style={styles.avatarBox}>
               <Sparkles color="#0D9488" size={14} />
             </View>
-            <View style={styles.typingBubble}>
+            <View style={[styles.typingBubble, isDark && styles.typingBubbleDark]}>
               <ActivityIndicator size="small" color="#0D9488" />
-              <Text style={styles.typingText}>Health Coach is thinking...</Text>
+              <Text style={[styles.typingText, isDark && styles.typingTextDark]}>Health Coach is thinking...</Text>
             </View>
           </View>
         )}
 
         {/* Suggested Quick Action Chips */}
-        <View style={styles.quickChipsContainer}>
-          <Text style={styles.quickChipsLabel}>Try asking your coach:</Text>
+        <View style={[styles.quickChipsContainer, isDark && styles.quickChipsContainerDark]}>
+          <Text style={[styles.quickChipsLabel, isDark && styles.quickChipsLabelDark]}>Try asking your coach:</Text>
           <View style={styles.quickChipsGrid}>
             {quickActionChips.map((chip, idx) => (
               <TouchableOpacity
                 key={idx}
-                style={styles.actionChip}
+                style={[styles.actionChip, isDark && styles.actionChipDark]}
                 onPress={() => handleSend(chip)}
                 disabled={isTyping}
                 activeOpacity={0.75}
               >
-                <Text style={styles.actionChipText}>{chip}</Text>
+                <Text style={[styles.actionChipText, isDark && styles.actionChipTextDark]}>{chip}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -243,11 +243,11 @@ export const AICoachScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
         keyboardVerticalOffset={90}
       >
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, isDark && styles.inputContainerDark]}>
           <TextInput
-            style={styles.textInput}
+            style={[styles.textInput, isDark && styles.textInputDark]}
             placeholder="Ask your Personal Health Coach anything..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={isDark ? "#64748B" : "#94A3B8"}
             value={inputText}
             onChangeText={setInputText}
             onSubmitEditing={() => handleSend()}
@@ -460,10 +460,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  typingBubbleDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
   typingText: {
     fontSize: 12,
     color: '#64748B',
     fontStyle: 'italic',
+  },
+  typingTextDark: {
+    color: '#94A3B8',
   },
   coachMsgText: {
     fontSize: 13,
@@ -502,12 +509,18 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
   },
+  quickChipsContainerDark: {
+    borderTopColor: '#1E293B',
+  },
   quickChipsLabel: {
     fontSize: 10,
     fontWeight: '800',
     color: '#64748B',
     letterSpacing: 0.5,
     marginBottom: 8,
+  },
+  quickChipsLabelDark: {
+    color: '#94A3B8',
   },
   quickChipsGrid: {
     flexDirection: 'row',
@@ -522,10 +535,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  actionChipDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
   actionChipText: {
     fontSize: 11,
     color: '#0D9488',
     fontWeight: '700',
+  },
+  actionChipTextDark: {
+    color: '#38BDF8',
   },
   inputContainer: {
     flexDirection: 'row',
@@ -536,6 +556,10 @@ const styles = StyleSheet.create({
     borderTopColor: '#E2E8F0',
     gap: 8,
   },
+  inputContainerDark: {
+    backgroundColor: '#0F172A',
+    borderTopColor: '#1E293B',
+  },
   textInput: {
     flex: 1,
     backgroundColor: '#F1F5F9',
@@ -544,6 +568,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: '#0F172A',
     fontSize: 13,
+  },
+  textInputDark: {
+    backgroundColor: '#1E293B',
+    color: '#F8FAFC',
+    borderColor: '#334155',
+    borderWidth: 1,
   },
   sendButton: {
     width: 38,

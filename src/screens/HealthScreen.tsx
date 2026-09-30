@@ -64,60 +64,60 @@ export const HealthScreen: React.FC = () => {
       <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
         <View style={styles.contentPadding}>
           {/* TODAY LIGHTWEIGHT ROWS */}
-          <Text style={styles.sectionHeader}>TODAY'S SUMMARY</Text>
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>TODAY'S SUMMARY</Text>
 
-          <View style={styles.rowsContainer}>
+          <View style={[styles.rowsContainer, isDark && styles.rowsContainerDark]}>
             <View style={styles.vitalRow}>
               <View style={styles.vitalLeft}>
                 <Heart color="#EF4444" size={16} />
-                <Text style={styles.rowLabel}>Heart Rate (MAX30102)</Text>
+                <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Heart Rate (MAX30102)</Text>
               </View>
-              <Text style={styles.rowValue}>{telemetry?.hr ? `${telemetry.hr} BPM` : '72 BPM'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.hr ? `${telemetry.hr} BPM` : '72 BPM'}</Text>
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, isDark && styles.dividerDark]} />
 
             <View style={styles.vitalRow}>
               <View style={styles.vitalLeft}>
                 <Thermometer color="#F59E0B" size={16} />
-                <Text style={styles.rowLabel}>Skin Temp (TMP117)</Text>
+                <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Skin Temp (TMP117)</Text>
               </View>
-              <Text style={styles.rowValue}>{telemetry?.skinTemp ? `${telemetry.skinTemp.toFixed(1)}°C` : '31.4°C'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.skinTemp ? `${telemetry.skinTemp.toFixed(1)}°C` : '31.4°C'}</Text>
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, isDark && styles.dividerDark]} />
 
             <View style={styles.vitalRow}>
               <View style={styles.vitalLeft}>
                 <Wind color="#06B6D4" size={16} />
-                <Text style={styles.rowLabel}>Ambient Temp (DHT11)</Text>
+                <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Ambient Temp (DHT11)</Text>
               </View>
-              <Text style={styles.rowValue}>{telemetry?.ambientTemp ? `${telemetry.ambientTemp.toFixed(1)}°C` : '31.0°C'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.ambientTemp ? `${telemetry.ambientTemp.toFixed(1)}°C` : '31.0°C'}</Text>
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, isDark && styles.dividerDark]} />
 
             <View style={styles.vitalRow}>
               <View style={styles.vitalLeft}>
                 <Droplets color="#3B82F6" size={16} />
-                <Text style={styles.rowLabel}>Humidity (DHT11)</Text>
+                <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Humidity (DHT11)</Text>
               </View>
-              <Text style={styles.rowValue}>{telemetry?.humidity ? `${telemetry.humidity.toFixed(0)}%` : '65%'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.humidity ? `${telemetry.humidity.toFixed(0)}%` : '65%'}</Text>
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, isDark && styles.dividerDark]} />
 
             <View style={styles.vitalRow}>
               <View style={styles.vitalLeft}>
                 <Activity color="#10B981" size={16} />
-                <Text style={styles.rowLabel}>Motion (MPU6500)</Text>
+                <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Motion (MPU6500)</Text>
               </View>
-              <Text style={styles.rowValue}>{telemetry?.motion ?? 'NORMAL'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.motion ?? 'NORMAL'}</Text>
             </View>
           </View>
 
           {/* YOUR TRENDS */}
-          <Text style={styles.sectionHeader}>HARDWARE TREND ANALYTICS</Text>
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>HARDWARE TREND ANALYTICS</Text>
 
           <TrendChart
             title="Heart Rate (MAX30102)"
@@ -168,29 +168,29 @@ export const HealthScreen: React.FC = () => {
           />
 
           {/* PERSONAL BASELINE */}
-          <Text style={styles.sectionHeader}>PERSONAL BASELINE EVALUATION</Text>
+          <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>PERSONAL BASELINE EVALUATION</Text>
 
-          <View style={styles.baselineCard}>
+          <View style={[styles.baselineCard, isDark && styles.baselineCardDark]}>
             <View style={styles.baselineItem}>
               <View style={styles.baselineHeaderRow}>
-                <Text style={styles.baselineName}>Heart Rate Baseline</Text>
+                <Text style={[styles.baselineName, isDark && styles.baselineNameDark]}>Heart Rate Baseline</Text>
                 <Text style={styles.baselineStatus}>
                   {telemetry?.hr ? (telemetry.hr <= baseline.heartRateMax ? 'Within baseline ✓' : 'Elevated') : '--'}
                 </Text>
               </View>
-              <Text style={styles.baselineRange}>{baseline.heartRateMin}–{baseline.heartRateMax} BPM</Text>
+              <Text style={[styles.baselineRange, isDark && styles.baselineRangeDark]}>{baseline.heartRateMin}–{baseline.heartRateMax} BPM</Text>
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, isDark && styles.dividerDark]} />
 
             <View style={styles.baselineItem}>
               <View style={styles.baselineHeaderRow}>
-                <Text style={styles.baselineName}>Skin Temperature Baseline</Text>
+                <Text style={[styles.baselineName, isDark && styles.baselineNameDark]}>Skin Temperature Baseline</Text>
                 <Text style={styles.baselineStatus}>
                   {telemetry?.skinTemp ? (telemetry.skinTemp <= 34.5 ? 'Normal skin temp ✓' : 'Elevated skin temp') : '--'}
                 </Text>
               </View>
-              <Text style={styles.baselineRange}>28.0–34.5°C skin contact range</Text>
+              <Text style={[styles.baselineRange, isDark && styles.baselineRangeDark]}>28.0–34.5°C skin contact range</Text>
             </View>
 
             <Text style={styles.explainFooter}>
@@ -257,12 +257,19 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginTop: 6,
   },
+  sectionHeaderDark: {
+    color: '#64748B',
+  },
   rowsContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  rowsContainerDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   vitalRow: {
     flexDirection: 'row',
@@ -280,14 +287,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A',
   },
+  rowLabelDark: {
+    color: '#CBD5E1',
+  },
   rowValue: {
     fontSize: 12,
     fontWeight: '800',
     color: '#0F172A',
   },
+  rowValueDark: {
+    color: '#F8FAFC',
+  },
   divider: {
     height: 1,
     backgroundColor: '#F1F5F9',
+  },
+  dividerDark: {
+    backgroundColor: '#334155',
   },
   noDataBox: {
     backgroundColor: '#FFFFFF',
@@ -315,6 +331,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  baselineCardDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
   baselineItem: {
     paddingVertical: 6,
   },
@@ -328,6 +348,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
+  baselineNameDark: {
+    color: '#F8FAFC',
+  },
   baselineStatus: {
     fontSize: 11,
     fontWeight: '700',
@@ -337,6 +360,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748B',
     marginTop: 2,
+  },
+  baselineRangeDark: {
+    color: '#94A3B8',
   },
   explainFooter: {
     fontSize: 10,
