@@ -72,7 +72,9 @@ export const HealthScreen: React.FC = () => {
                 <Heart color="#EF4444" size={16} />
                 <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Heart Rate (MAX30102)</Text>
               </View>
-              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.hr ? `${telemetry.hr} BPM` : '72 BPM'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>
+                {isLive && telemetry?.hr ? `${telemetry.hr} BPM` : '--'}
+              </Text>
             </View>
 
             <View style={[styles.divider, isDark && styles.dividerDark]} />
@@ -82,7 +84,9 @@ export const HealthScreen: React.FC = () => {
                 <Thermometer color="#F59E0B" size={16} />
                 <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Skin Temp (TMP117)</Text>
               </View>
-              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.skinTemp ? `${telemetry.skinTemp.toFixed(1)}°C` : '31.4°C'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>
+                {isLive && telemetry?.skinTemp ? `${telemetry.skinTemp.toFixed(1)}°C` : '--'}
+              </Text>
             </View>
 
             <View style={[styles.divider, isDark && styles.dividerDark]} />
@@ -92,7 +96,9 @@ export const HealthScreen: React.FC = () => {
                 <Wind color="#06B6D4" size={16} />
                 <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Ambient Temp (DHT11)</Text>
               </View>
-              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.ambientTemp ? `${telemetry.ambientTemp.toFixed(1)}°C` : '31.0°C'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>
+                {isLive && telemetry?.ambientTemp ? `${telemetry.ambientTemp.toFixed(1)}°C` : '--'}
+              </Text>
             </View>
 
             <View style={[styles.divider, isDark && styles.dividerDark]} />
@@ -102,7 +108,9 @@ export const HealthScreen: React.FC = () => {
                 <Droplets color="#3B82F6" size={16} />
                 <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Humidity (DHT11)</Text>
               </View>
-              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.humidity ? `${telemetry.humidity.toFixed(0)}%` : '65%'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>
+                {isLive && telemetry?.humidity ? `${telemetry.humidity.toFixed(0)}%` : '--'}
+              </Text>
             </View>
 
             <View style={[styles.divider, isDark && styles.dividerDark]} />
@@ -112,60 +120,74 @@ export const HealthScreen: React.FC = () => {
                 <Activity color="#10B981" size={16} />
                 <Text style={[styles.rowLabel, isDark && styles.rowLabelDark]}>Motion (MPU6500)</Text>
               </View>
-              <Text style={[styles.rowValue, isDark && styles.rowValueDark]}>{telemetry?.motion ?? 'NORMAL'}</Text>
+              <Text style={[styles.rowValue, isDark && styles.rowValueDark, !isLive && { color: '#94A3B8' }]}>
+                {isLive ? (telemetry?.motion ?? 'NORMAL') : 'DISCONNECTED'}
+              </Text>
             </View>
           </View>
 
           {/* YOUR TRENDS */}
           <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>HARDWARE TREND ANALYTICS</Text>
 
-          <TrendChart
-            title="Heart Rate (MAX30102)"
-            unit="BPM"
-            color="#EF4444"
-            dataToday={hrToday}
-            data7Days={hr7D}
-            data30Days={hr30D}
-            labelsToday={['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', 'Now']}
-            labels7Days={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
-            baselineMin={baseline.heartRateMin}
-            baselineMax={baseline.heartRateMax}
-          />
+          {isLive ? (
+            <>
+              <TrendChart
+                title="Heart Rate (MAX30102)"
+                unit="BPM"
+                color="#EF4444"
+                dataToday={hrToday}
+                data7Days={hr7D}
+                data30Days={hr30D}
+                labelsToday={['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', 'Now']}
+                labels7Days={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
+                baselineMin={baseline.heartRateMin}
+                baselineMax={baseline.heartRateMax}
+              />
 
-          <TrendChart
-            title="Skin Temperature (TMP117)"
-            unit="°C"
-            color="#F59E0B"
-            dataToday={tempToday}
-            data7Days={temp7D}
-            data30Days={temp30D}
-            labelsToday={['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', 'Now']}
-            labels7Days={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
-            baselineMin={28.0}
-            baselineMax={35.0}
-          />
+              <TrendChart
+                title="Skin Temperature (TMP117)"
+                unit="°C"
+                color="#F59E0B"
+                dataToday={tempToday}
+                data7Days={temp7D}
+                data30Days={temp30D}
+                labelsToday={['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', 'Now']}
+                labels7Days={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
+                baselineMin={28.0}
+                baselineMax={35.0}
+              />
 
-          <TrendChart
-            title="Ambient Climate (DHT11)"
-            unit="°C"
-            color="#06B6D4"
-            dataToday={ambToday}
-            data7Days={amb7D}
-            data30Days={amb7D}
-            labelsToday={['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', 'Now']}
-            labels7Days={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
-          />
+              <TrendChart
+                title="Ambient Climate (DHT11)"
+                unit="°C"
+                color="#06B6D4"
+                dataToday={ambToday}
+                data7Days={amb7D}
+                data30Days={amb7D}
+                labelsToday={['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', 'Now']}
+                labels7Days={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
+              />
 
-          <TrendChart
-            title="Daily Activity (MPU6500)"
-            unit="steps"
-            color="#10B981"
-            dataToday={stepsToday}
-            data7Days={steps7D}
-            data30Days={steps7D}
-            labelsToday={['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', 'Now']}
-            labels7Days={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
-          />
+              <TrendChart
+                title="Daily Activity (MPU6500)"
+                unit="steps"
+                color="#10B981"
+                dataToday={stepsToday}
+                data7Days={steps7D}
+                data30Days={steps7D}
+                labelsToday={['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', 'Now']}
+                labels7Days={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
+              />
+            </>
+          ) : (
+            <View style={[styles.noDataBox, isDark && styles.rowsContainerDark]}>
+              <Activity color={isDark ? '#64748B' : '#94A3B8'} size={32} />
+              <Text style={[styles.noDataTitle, isDark && styles.textDark]}>No Live Sensor History</Text>
+              <Text style={[styles.noDataSub, isDark && styles.subDark]}>
+                Connect your HydraX ESP32 BLE wearable or enable Hackathon Demo Mode in About & Settings to stream biometrics and render real-time trend analytics.
+              </Text>
+            </View>
+          )}
 
           {/* PERSONAL BASELINE */}
           <Text style={[styles.sectionHeader, isDark && styles.sectionHeaderDark]}>PERSONAL BASELINE EVALUATION</Text>
@@ -174,8 +196,8 @@ export const HealthScreen: React.FC = () => {
             <View style={styles.baselineItem}>
               <View style={styles.baselineHeaderRow}>
                 <Text style={[styles.baselineName, isDark && styles.baselineNameDark]}>Heart Rate Baseline</Text>
-                <Text style={styles.baselineStatus}>
-                  {telemetry?.hr ? (telemetry.hr <= baseline.heartRateMax ? 'Within baseline ✓' : 'Elevated') : '--'}
+                <Text style={[styles.baselineStatus, !isLive && { color: '#94A3B8' }]}>
+                  {isLive && telemetry?.hr ? (telemetry.hr <= baseline.heartRateMax ? 'Within baseline ✓' : 'Elevated') : '--'}
                 </Text>
               </View>
               <Text style={[styles.baselineRange, isDark && styles.baselineRangeDark]}>{baseline.heartRateMin}–{baseline.heartRateMax} BPM</Text>
@@ -186,8 +208,8 @@ export const HealthScreen: React.FC = () => {
             <View style={styles.baselineItem}>
               <View style={styles.baselineHeaderRow}>
                 <Text style={[styles.baselineName, isDark && styles.baselineNameDark]}>Skin Temperature Baseline</Text>
-                <Text style={styles.baselineStatus}>
-                  {telemetry?.skinTemp ? (telemetry.skinTemp <= 34.5 ? 'Normal skin temp ✓' : 'Elevated skin temp') : '--'}
+                <Text style={[styles.baselineStatus, !isLive && { color: '#94A3B8' }]}>
+                  {isLive && telemetry?.skinTemp ? (telemetry.skinTemp <= 34.5 ? 'Normal skin temp ✓' : 'Elevated skin temp') : '--'}
                 </Text>
               </View>
               <Text style={[styles.baselineRange, isDark && styles.baselineRangeDark]}>28.0–34.5°C skin contact range</Text>
@@ -204,6 +226,7 @@ export const HealthScreen: React.FC = () => {
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
