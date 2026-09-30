@@ -1,4 +1,13 @@
-export type MotionType = "NORMAL" | "ACTIVE" | "IMPACT" | "UNKNOWN";
+export type MotionType = 
+  | "RESTING" 
+  | "WALKING" 
+  | "RUNNING" 
+  | "CYCLING" 
+  | "IMPACT" 
+  | "NORMAL" 
+  | "ACTIVE" 
+  | "UNKNOWN";
+
 export type HydrationRiskType = "LOW" | "MODERATE" | "HIGH" | "WAITING";
 export type HeatRiskType = "LOW" | "MODERATE" | "HIGH" | "WAITING";
 export type OverallRiskType = "LOW" | "MODERATE" | "HIGH" | "CRITICAL" | "WAITING";
@@ -10,6 +19,10 @@ export interface HydraXRawPayload {
   ambientTemp?: number;
   humidity?: number;
   motion?: string;
+  activity?: string;
+  steps?: number;
+  cadence?: number;
+  speedKmh?: number;
   riskScore?: number;
   hydrationRisk?: string;
   heatRisk?: string;
@@ -21,7 +34,11 @@ export interface HydraXTelemetry {
   skinTemp: number; // TMP117 Contact/Skin Temperature
   ambientTemp: number; // DHT11 Ambient Temperature
   humidity: number; // DHT11 Relative Humidity
-  motion: MotionType; // MPU6500 Motion Status
+  motion: MotionType; // MPU6500 Motion & Activity Status
+  steps: number; // Live step counter
+  cadence: number; // Steps/min or RPM
+  speedKmh: number; // Estimated speed in km/h
+  activeCalories: number; // Calculated active kcal
   riskScore: number; // 0 - 100
   hydrationRisk: HydrationRiskType;
   heatRisk: HeatRiskType;

@@ -4,6 +4,7 @@ import { Header } from '../components/Header';
 import { DeviceStatus } from '../components/DeviceStatus';
 import { RiskHero } from '../components/RiskHero';
 import { LiveVitalsGrid } from '../components/LiveVitalsGrid';
+import { LiveActivityCard } from '../components/LiveActivityCard';
 import { HydrationCard } from '../components/HydrationCard';
 import { EnvironmentCard } from '../components/EnvironmentCard';
 import { AIInsightCard } from '../components/AIInsightCard';
@@ -18,7 +19,7 @@ import { evaluateRiskEngine } from '../ai/RiskEngine';
 import { getExplainableRiskAnalysis } from '../ai/ExplainabilityEngine';
 import { defaultUserProfile } from '../data/mockData';
 import { telemetryStore } from '../telemetry/TelemetryStore';
-import { HydraXTelemetry, DeviceConnectionState } from '../telemetry/telemetryTypes';
+import { HydraXTelemetry, DeviceConnectionState, MotionType } from '../telemetry/telemetryTypes';
 import { DisasterModeType, DemoScenarioKey, ExplainableRiskResult, HealthMetrics, EnvironmentalMetrics } from '../types';
 import { Cpu, ShieldCheck, Bluetooth } from 'lucide-react-native';
 
@@ -70,9 +71,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     spO2: 98,
     dailyAvgSpO2: 98,
     bodyTemperature: telemetry?.skinTemp ?? 31.4,
-    steps: 6420,
+    steps: telemetry?.steps ?? 6420,
     activeMinutes: 45,
-    calories: 450,
+    calories: telemetry?.activeCalories ?? 450,
     fatigueScore: 25,
     sleepHours: 7.5,
     sleepScore: 85,
@@ -114,6 +115,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     setWaterConsumed((prev) => Math.min(3.5, prev + 0.25));
   };
 
+  const handleSimulateMotionMode = (mode: MotionType) => {
+    const mockPayload = {
+      hr: mode === 'RUNNING' ? 142 : mode === 'CYCLING' ? 128 : mode === 'WALKING' ? 95 : 72,
+      skinTemp: mode === 'RUNNING' ? 33.8 : 31.4,
+      ambientTemp: 31.0,
+      humidity: 65,
+      motion: mode,
+      riskScore: mode === 'IMPACT' ? 92 : mode === 'RUNNING' ? 45 : 12,
+      hydrationRisk: mode === 'RUNNING' ? 'MODERATE' : 'LOW',
+      heatRisk: 'LOW',
+      overallRisk: mode === 'IMPACT' ? 'CRITICAL' : mode === 'RUNNING' ? 'MODERATE' : 'LOW',
+    };
+    telemetryStore.updateTelemetryFromPayload(mockPayload);
+    if (mode === 'IMPACT') {
+      setShowFallModal(true);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Header
@@ -146,7 +165,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             isDemoMode={connState.isDemoMode}
           />
 
-          {/* 3. Hydration Estimate Card */}
+          {/* 3. MPU6500 Live Activity Card (Walking, Running, Cycling, Resting, Impact) */}
+          <LiveActivityCard
+            telemetry={telemetry}
+            isConnected={connState.connected}
+            isDemoMode={connState.isDemoMode}
+            onSelectActivityMode={handleSimulateMotionMode}
+          />
+
+          {/* 4. Hydration Estimate Card */}
           <HydrationCard
             hydrationRisk={telemetry?.hydrationRisk ?? 'LOW'}
             consumedLiters={waterConsumed}
@@ -154,14 +181,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onAddWater={handleAddWater}
           />
 
-          {/* 4. Ambient Environment Card */}
+          {/* 5. Ambient Environment Card */}
           <EnvironmentCard
             telemetry={telemetry}
             isConnected={connState.connected}
             isDemoMode={connState.isDemoMode}
           />
 
-          {/* 5. HydraX AI Insight */}
+          {/* 6. HydraX AI Insight */}
           <AIInsightCard
             health={healthForExplain}
             env={envForExplain}
@@ -186,7 +213,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* 6. Emergency Overlay Button */}
+          {/* 7. Emergency Overlay Button */}
           <EmergencyButton onPress={onTriggerSOS} />
         </View>
 
