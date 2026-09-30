@@ -54,14 +54,14 @@ export const DisasterModeModal: React.FC<DisasterModeModalProps> = ({
               return (
                 <TouchableOpacity
                   key={item.type}
-                  style={[styles.itemCard, isSelected && { borderColor: item.color, backgroundColor: 'rgba(15, 23, 42, 0.9)' }]}
+                  style={[styles.itemCard, isSelected && { borderColor: item.color, backgroundColor: '#FFFFFF', shadowColor: item.color, shadowOpacity: 0.15, elevation: 3 }]}
                   onPress={() => {
                     onSelectDisaster(item.type);
                     onClose();
                   }}
                   activeOpacity={0.8}
                 >
-                  <View style={[styles.iconContainer, { backgroundColor: `${item.color}20` }]}>
+                  <View style={[styles.iconContainer, { backgroundColor: `${item.color}15` }]}>
                     <IconComp color={item.color} size={20} />
                   </View>
 
@@ -91,17 +91,17 @@ export const DisasterModeModal: React.FC<DisasterModeModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(11, 19, 43, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#131C35',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '85%',
     borderWidth: 1,
-    borderColor: '#233055',
+    borderColor: '#E2E8F0',
   },
   header: {
     flexDirection: 'row',
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#F1F5F9',
   },
   titleGroup: {
     flexDirection: 'row',
@@ -119,12 +119,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 15,
     fontWeight: '900',
-    color: '#F8FAFC',
+    color: '#0F172A',
     letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
   },
   closeBtn: {
     padding: 4,
@@ -135,12 +135,12 @@ const styles = StyleSheet.create({
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
+    backgroundColor: '#F8FAFC',
     borderRadius: 14,
     padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#E2E8F0',
     gap: 12,
   },
   iconContainer: {
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   itemLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   activeTag: {
     paddingHorizontal: 6,
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   },
   itemDesc: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
     marginTop: 2,
     lineHeight: 15,
   },

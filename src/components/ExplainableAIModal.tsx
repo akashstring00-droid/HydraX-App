@@ -91,17 +91,17 @@ export const ExplainableAIModal: React.FC<ExplainableAIModalProps> = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(11, 19, 43, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#131C35',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '80%',
     borderWidth: 1,
-    borderColor: '#233055',
+    borderColor: '#E2E8F0',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#F1F5F9',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -129,12 +129,12 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 14,
     fontWeight: '900',
-    color: '#F8FAFC',
+    color: '#0F172A',
     letterSpacing: 0.5,
   },
   modalSubtitle: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
   },
   closeButton: {
     padding: 4,
@@ -146,16 +146,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
+    backgroundColor: '#F8FAFC',
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#E2E8F0',
   },
   categoryTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#0F172A',
   },
   levelBadge: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
@@ -166,18 +166,18 @@ const styles = StyleSheet.create({
   levelText: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#F59E0B',
+    color: '#D97706',
   },
   summaryText: {
     fontSize: 13,
-    color: '#CBD5E1',
+    color: '#334155',
     lineHeight: 18,
     marginTop: 12,
   },
   factorHeader: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#38BDF8',
+    color: '#0284C7',
     letterSpacing: 0.8,
     marginTop: 18,
     marginBottom: 10,
@@ -192,17 +192,17 @@ const styles = StyleSheet.create({
   },
   factorName: {
     fontSize: 12,
-    color: '#E2E8F0',
+    color: '#334155',
     fontWeight: '600',
   },
   factorPct: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#38BDF8',
+    color: '#0284C7',
   },
   barTrack: {
     height: 8,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#F1F5F9',
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   privacyNoteText: {
     flex: 1,
     fontSize: 11,
-    color: '#34D399',
+    color: '#059669',
   },
   actionDoneButton: {
     backgroundColor: '#0EA5E9',
