@@ -20,7 +20,7 @@ export class WebBleAdapter {
       telemetryStore.setConnectionState({
         connecting: false,
         connected: false,
-        connectionError: 'Web Bluetooth API is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Brave.',
+        connectionError: 'Web Bluetooth is not supported in this browser. Please use Chrome on Android, Windows, or Mac.',
       });
       return false;
     }
@@ -29,7 +29,7 @@ export class WebBleAdapter {
       telemetryStore.setConnectionState({
         connecting: false,
         connected: false,
-        connectionError: 'Web Bluetooth requires an HTTPS secure connection or localhost. Please deploy to HTTPS (Vercel) or run locally.',
+        connectionError: 'Web Bluetooth requires HTTPS or localhost. Please open the app over HTTPS.',
       });
       return false;
     }
@@ -41,34 +41,33 @@ export class WebBleAdapter {
       });
 
       const navBt = (navigator as any).bluetooth;
-      const uuidLower = BLE_CONFIG.serviceUuid.toLowerCase();
-      const uuidUpper = BLE_CONFIG.serviceUuid.toUpperCase();
+      const serviceUuidLower = BLE_CONFIG.serviceUuid.toLowerCase();
       const charUuidLower = BLE_CONFIG.characteristicUuid.toLowerCase();
 
+      // W3C Web Bluetooth Standard Request Device Options for Mobile & Desktop Chrome
       let selectedDevice: any = null;
 
-      // Strategy 1: Multi-Filter (Exact name, prefix, or Service UUID)
       try {
+        // Attempt 1: Filter by Name or Prefix
         selectedDevice = await navBt.requestDevice({
           filters: [
             { name: BLE_CONFIG.deviceName },
             { namePrefix: 'HydraX' },
             { namePrefix: 'ESP32' },
-            { services: [uuidLower] },
           ],
-          optionalServices: [uuidLower, uuidUpper],
+          optionalServices: [serviceUuidLower],
         });
-      } catch (filterErr: any) {
-        if (filterErr.name === 'NotFoundError' || filterErr.message?.includes('User cancelled')) {
-          throw filterErr;
+      } catch (err: any) {
+        if (err.name === 'NotFoundError' || err.message?.includes('User cancelled')) {
+          throw err;
         }
 
-        console.log('[WebBleAdapter] Filter strategy returned no match, trying acceptAllDevices fallback for Desktop Chrome...', filterErr);
+        console.log('[WebBleAdapter] Named filter returned no device, requesting acceptAllDevices popup...', err);
 
-        // Strategy 2: Fallback acceptAllDevices for Desktop Web browsers
+        // Attempt 2: Universal Accept All Devices Popup (Supported on both Mobile & Desktop Chrome)
         selectedDevice = await navBt.requestDevice({
           acceptAllDevices: true,
-          optionalServices: [uuidLower, uuidUpper],
+          optionalServices: [serviceUuidLower],
         });
       }
 
@@ -86,36 +85,38 @@ export class WebBleAdapter {
       // Connect to GATT Server
       this.gattServer = await this.device.gatt.connect();
 
-      // Find Primary Service
-      let service: any = null;
+      // Service & Characteristic Discovery
+      let targetChar: any = null;
+
       try {
-        service = await this.gattServer.getPrimaryService(uuidLower);
+        const service = await this.gattServer.getPrimaryService(serviceUuidLower);
+        targetChar = await service.getCharacteristic(charUuidLower);
       } catch (e) {
-        try {
-          service = await this.gattServer.getPrimaryService(uuidUpper);
-        } catch (e2) {
-          const services = await this.gattServer.getPrimaryServices();
-          if (services && services.length > 0) {
-            service = services[0];
-          } else {
-            throw new Error(`GATT Primary Service ${BLE_CONFIG.serviceUuid} not found on device.`);
-          }
+        console.log('[WebBleAdapter] Explicit UUID lookup fallback, scanning GATT services...', e);
+
+        // Dynamic fallback: scan all primary services for notification characteristic
+        const services = await this.gattServer.getPrimaryServices();
+        for (const s of services) {
+          try {
+            const chars = await s.getCharacteristics();
+            for (const c of chars) {
+              if (c.properties.notify || c.properties.indicate) {
+                targetChar = c;
+                break;
+              }
+            }
+          } catch (_) {}
+          if (targetChar) break;
         }
       }
 
-      // Find Characteristic
-      try {
-        this.characteristic = await service.getCharacteristic(charUuidLower);
-      } catch (e) {
-        const characteristics = await service.getCharacteristics();
-        if (characteristics && characteristics.length > 0) {
-          this.characteristic = characteristics[0];
-        } else {
-          throw new Error(`GATT Characteristic ${BLE_CONFIG.characteristicUuid} not found.`);
-        }
+      if (!targetChar) {
+        throw new Error('Connected to BLE device, but no notification GATT characteristic was found.');
       }
 
-      // Subscribe to Notifications
+      this.characteristic = targetChar;
+
+      // Subscribe to 1Hz telemetry notifications
       await this.characteristic.startNotifications();
       this.characteristic.addEventListener(
         'characteristicvaluechanged',
@@ -138,15 +139,15 @@ export class WebBleAdapter {
 
       return true;
     } catch (err: any) {
-      console.error('[WebBleAdapter] Desktop Web BLE error:', err);
+      console.error('[WebBleAdapter] Bluetooth connection error:', err);
       const isUserCancel = err.name === 'NotFoundError' || err.message?.includes('User cancelled') || err.message?.includes('cancel');
 
       telemetryStore.setConnectionState({
         connected: false,
         connecting: false,
         connectionError: isUserCancel
-          ? 'Bluetooth pair request canceled by user.'
-          : (err.message || 'Desktop Bluetooth pairing failed. Ensure Bluetooth is turned ON in Windows/Mac settings.'),
+          ? 'Bluetooth pairing canceled by user.'
+          : (err.message || 'Bluetooth connection failed. Ensure Bluetooth is ON on your device.'),
       });
       return false;
     }
@@ -174,7 +175,7 @@ export class WebBleAdapter {
       const rawText = decoder.decode(valueBuffer);
       telemetryStore.updateTelemetryFromPayload(rawText);
     } catch (err) {
-      console.warn('[WebBleAdapter] Error parsing GATT notification packet:', err);
+      console.warn('[WebBleAdapter] Error parsing GATT notification:', err);
     }
   }
 
