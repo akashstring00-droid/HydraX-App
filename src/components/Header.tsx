@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { Activity, ShieldAlert, Cpu, Sparkles, User } from 'lucide-react-native';
+import { Activity, ShieldAlert, Cpu, Sparkles, User, Sun, Moon } from 'lucide-react-native';
+import { themeStore } from '../theme/ThemeStore';
 
 interface HeaderProps {
   userName: string;
@@ -22,6 +23,16 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
 }) => {
   const isDisasterActive = activeDisaster !== 'NORMAL';
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    const unsub = themeStore.subscribe((m) => {
+      setThemeMode(m);
+    });
+    return unsub;
+  }, []);
+
+  const isDark = themeMode === 'dark';
 
   return (
     <View style={styles.container}>
@@ -46,6 +57,16 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Actions */}
         <View style={styles.rightActions}>
+          {/* Theme Switcher Moon/Sun Button */}
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => themeStore.toggleTheme()}
+            activeOpacity={0.7}
+            title="Toggle Theme"
+          >
+            {isDark ? <Sun color="#F59E0B" size={15} /> : <Moon color="#0EA5E9" size={15} />}
+          </TouchableOpacity>
+
           {/* Disaster Mode Small Outline Action */}
           <TouchableOpacity
             style={[styles.disasterOutlineBtn, isDisasterActive && styles.disasterActiveBtn]}

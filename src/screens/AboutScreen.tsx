@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
-import { ShieldCheck, Bluetooth, Cpu, AlertOctagon, Info, ChevronRight, Zap, RefreshCw } from 'lucide-react-native';
+import { ShieldCheck, Bluetooth, Cpu, AlertOctagon, Info, ChevronRight, Zap, RefreshCw, Sun, Moon } from 'lucide-react-native';
 import { sensorService } from '../sensors/SensorService';
 import { telemetryStore } from '../telemetry/TelemetryStore';
 import { DeviceConnectionState } from '../telemetry/telemetryTypes';
 import { DisasterModeType, DemoScenarioKey } from '../types';
+import { themeStore } from '../theme/ThemeStore';
 
 interface AboutScreenProps {
   onOpenBLE: () => void;
@@ -23,13 +24,22 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
 }) => {
   const [connState, setConnState] = useState<DeviceConnectionState>(telemetryStore.getSnapshot().state);
   const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
 
   useEffect(() => {
-    const unsubscribe = telemetryStore.subscribe((_, s) => {
+    const unsubTelemetry = telemetryStore.subscribe((_, s) => {
       setConnState(s);
     });
-    return unsubscribe;
+    const unsubTheme = themeStore.subscribe((m) => {
+      setThemeMode(m);
+    });
+    return () => {
+      unsubTelemetry();
+      unsubTheme();
+    };
   }, []);
+
+  const isDark = themeMode === 'dark';
 
   const handleToggleDemo = (val: boolean) => {
     if (val) {
@@ -67,6 +77,26 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({
               <ChevronRight color="#94A3B8" size={18} />
             </View>
           </TouchableOpacity>
+
+          {/* APPEARANCE & THEME */}
+          <Text style={styles.sectionHeader}>APPEARANCE</Text>
+          <View style={styles.card}>
+            <View style={styles.cardRow}>
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(14, 165, 233, 0.15)' : 'rgba(245, 158, 11, 0.1)' }]}>
+                {isDark ? <Moon color="#0EA5E9" size={18} /> : <Sun color="#F59E0B" size={18} />}
+              </View>
+              <View style={styles.cardTextCol}>
+                <Text style={styles.cardTitle}>{isDark ? 'Dark Theme' : 'Light Theme'}</Text>
+                <Text style={styles.cardSub}>{isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}</Text>
+              </View>
+              <Switch
+                value={isDark}
+                onValueChange={() => themeStore.toggleTheme()}
+                trackColor={{ false: '#CBD5E1', true: '#0EA5E9' }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </View>
 
           {/* DEMO MODE TOGGLE */}
           <Text style={styles.sectionHeader}>DEMO & TESTING</Text>
