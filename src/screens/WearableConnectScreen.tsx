@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { ArrowLeft, Cpu, Bluetooth, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { ArrowLeft, Bluetooth, RefreshCw, CheckCircle2, AlertCircle, Play, Square, Terminal } from 'lucide-react-native';
 import { webBleAdapter } from '../bluetooth/WebBleAdapter';
 import { telemetryStore } from '../telemetry/TelemetryStore';
+import { BLE_CONFIG } from '../bluetooth/BleConfig';
 import { DeviceConnectionState, HydraXTelemetry } from '../telemetry/telemetryTypes';
 
 interface WearableConnectScreenProps {
@@ -13,13 +14,24 @@ export const WearableConnectScreen: React.FC<WearableConnectScreenProps> = ({ on
   const [telemetry, setTelemetry] = useState<HydraXTelemetry | null>(null);
   const [connState, setConnState] = useState<DeviceConnectionState>(telemetryStore.getSnapshot().state);
   const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [packetLogs, setPacketLogs] = useState<string[]>([]);
+  const [simulatingBLESream, setSimulatingBLEStream] = useState<boolean>(false);
+
+  const simTimerRef = useRef<any>(null);
 
   useEffect(() => {
     const unsubscribe = telemetryStore.subscribe((t, s) => {
       setTelemetry(t);
       setConnState(s);
+      if (t) {
+        const log = `[${new Date().toLocaleTimeString()}] BLE RX: {"hr":${t.hr},"skinTemp":${t.skinTemp},"ambientTemp":${t.ambientTemp},"humidity":${t.humidity},"motion":"${t.motion}"}`;
+        setPacketLogs((prev) => [log, ...prev.slice(0, 9)]);
+      }
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (simTimerRef.current) clearInterval(simTimerRef.current);
+    };
   }, []);
 
   const handleConnectWebBle = async () => {
@@ -27,21 +39,69 @@ export const WearableConnectScreen: React.FC<WearableConnectScreenProps> = ({ on
     try {
       await webBleAdapter.connect();
     } catch (err: any) {
-      console.warn('Web BLE connection error:', err);
+      console.warn('[BLE UI] Pairing error:', err);
     } finally {
       setIsScanning(false);
     }
   };
 
+  const startSimulatedBLEStream = () => {
+    setSimulatingBLEStream(true);
+    let hr = 72;
+    let skinTemp = 31.2;
+
+    telemetryStore.setConnectionState({
+      connected: true,
+      deviceName: 'ESP32-HydraX-Sim',
+      dataFreshness: 'live',
+      sensorStatus: { max30102: true, tmp117: true, dht11: true, mpu6500: true },
+    });
+
+    if (simTimerRef.current) clearInterval(simTimerRef.current);
+
+    simTimerRef.current = setInterval(() => {
+      hr = Math.min(115, Math.max(60, hr + (Math.random() > 0.5 ? 1 : -1)));
+      skinTemp = Math.min(36.0, Math.max(30.0, Math.round((skinTemp + (Math.random() > 0.5 ? 0.1 : -0.1)) * 10) / 10));
+
+      const payload = {
+        hr,
+        skinTemp,
+        ambientTemp: 31.5,
+        humidity: 68,
+        motion: Math.random() > 0.95 ? 'IMPACT' : 'NORMAL',
+        riskScore: hr > 100 ? 58 : 14,
+        hydrationRisk: 'LOW',
+        heatRisk: 'MODERATE',
+        overallRisk: hr > 100 ? 'HIGH' : 'LOW',
+      };
+
+      telemetryStore.updateTelemetryFromPayload(payload);
+    }, 1000);
+  };
+
+  const stopSimulatedBLEStream = () => {
+    setSimulatingBLEStream(false);
+    if (simTimerRef.current) clearInterval(simTimerRef.current);
+    telemetryStore.setConnectionState({
+      connected: false,
+      connecting: false,
+      dataFreshness: 'disconnected',
+    });
+  };
+
   const handleDisconnect = async () => {
-    await webBleAdapter.disconnect();
+    if (simulatingBLESream) {
+      stopSimulatedBLEStream();
+    } else {
+      await webBleAdapter.disconnect();
+    }
   };
 
   const sensors = [
-    { name: 'MAX30102 Heart Rate', status: connState.sensorStatus.max30102, val: telemetry?.hr ? `${telemetry.hr} BPM` : '--' },
-    { name: 'TMP117 Skin Temp', status: connState.sensorStatus.tmp117, val: telemetry?.skinTemp ? `${telemetry.skinTemp.toFixed(1)}°C` : '--' },
+    { name: 'MAX30102 Heart Rate (Optical)', status: connState.sensorStatus.max30102, val: telemetry?.hr ? `${telemetry.hr} BPM` : '--' },
+    { name: 'TMP117 Skin Temp (High Precision)', status: connState.sensorStatus.tmp117, val: telemetry?.skinTemp ? `${telemetry.skinTemp.toFixed(1)}°C` : '--' },
     { name: 'DHT11 Ambient & Humidity', status: connState.sensorStatus.dht11, val: telemetry?.ambientTemp ? `${telemetry.ambientTemp}°C / ${telemetry.humidity}%` : '--' },
-    { name: 'MPU6500 Motion & Fall', status: connState.sensorStatus.mpu6500, val: telemetry?.motion ?? '--' },
+    { name: 'MPU6500 6-Axis Motion & Fall', status: connState.sensorStatus.mpu6500, val: telemetry?.motion ?? '--' },
   ];
 
   return (
@@ -52,8 +112,8 @@ export const WearableConnectScreen: React.FC<WearableConnectScreenProps> = ({ on
           <ArrowLeft color="#0F172A" size={20} />
         </TouchableOpacity>
         <View style={styles.headerTextGroup}>
-          <Text style={styles.headerTitle}>HydraX-Health BLE Device</Text>
-          <Text style={styles.headerSub}>ESP32 GATT Web Bluetooth Integration</Text>
+          <Text style={styles.headerTitle}>ESP32 BLE Hardware Bridge</Text>
+          <Text style={styles.headerSub}>Chrome GATT Bluetooth Notifications</Text>
         </View>
 
         {connState.connected ? (
@@ -80,29 +140,56 @@ export const WearableConnectScreen: React.FC<WearableConnectScreenProps> = ({ on
             </View>
             <View style={styles.heroTitleCol}>
               <Text style={styles.deviceNameText}>
-                {connState.isDemoMode ? 'HydraX-Demo-Sim' : connState.deviceName || 'HydraX-Health'}
+                {connState.deviceName || BLE_CONFIG.deviceName}
               </Text>
-              <Text style={styles.statusBadgeText}>
-                {connState.connected ? `Connected • ${connState.dataFreshness.toUpperCase()}` : 'Not Connected'}
+              <Text style={[styles.statusBadgeText, { color: connState.connected ? '#10B981' : '#94A3B8' }]}>
+                {connState.connected ? `Connected • ${connState.dataFreshness.toUpperCase()} Telemetry` : 'Not Connected'}
               </Text>
             </View>
           </View>
 
           <Text style={styles.heroDesc}>
-            HydraX connects to ESP32 hardware band over BLE Service UUID `7d8a1000-6f2b-4a91-9c31-8f5e2d7a1001` transmitting raw JSON packets at 1Hz.
+            HydraX connects directly to physical ESP32 microcontrollers over GATT Service UUID `{BLE_CONFIG.serviceUuid}`.
           </Text>
 
-          {!connState.connected && !connState.isDemoMode && (
-            <TouchableOpacity style={styles.primaryConnectBtn} onPress={handleConnectWebBle} disabled={isScanning}>
-              <Text style={styles.primaryConnectBtnText}>
-                {isScanning ? 'Pairing with Chrome Web BLE...' : 'Pair HydraX-Health Band'}
-              </Text>
-            </TouchableOpacity>
-          )}
+          {/* Action Buttons */}
+          <View style={styles.actionButtonsRow}>
+            {!connState.connected ? (
+              <>
+                <TouchableOpacity style={styles.primaryConnectBtn} onPress={handleConnectWebBle} disabled={isScanning}>
+                  <Bluetooth color="#FFFFFF" size={16} />
+                  <Text style={styles.primaryConnectBtnText}>
+                    {isScanning ? 'Pairing Web BLE...' : 'Pair HydraX ESP32 Band'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.simStreamBtn} 
+                  onPress={simulatingBLESream ? stopSimulatedBLEStream : startSimulatedBLEStream}
+                >
+                  <Play color="#0D9488" size={14} />
+                  <Text style={styles.simStreamBtnText}>Simulate 1Hz Stream</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity style={styles.disconnectBtnFull} onPress={handleDisconnect}>
+                <Square color="#EF4444" size={14} />
+                <Text style={styles.disconnectBtnFullText}>Disconnect BLE Session</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
+        {/* Connection Error Alert */}
+        {connState.connectionError && (
+          <View style={styles.errorCard}>
+            <AlertCircle color="#EF4444" size={16} />
+            <Text style={styles.errorText}>{connState.connectionError}</Text>
+          </View>
+        )}
+
         {/* Live Hardware Sensor Checklist */}
-        <Text style={styles.sectionHeader}>LIVE HARDWARE SENSOR CHECKLIST</Text>
+        <Text style={styles.sectionHeader}>HARDWARE SENSORS STATUS</Text>
 
         <View style={styles.checklistCard}>
           {sensors.map((s, idx) => (
@@ -123,14 +210,24 @@ export const WearableConnectScreen: React.FC<WearableConnectScreenProps> = ({ on
           ))}
         </View>
 
-        {/* GATT Service Specifications */}
-        <Text style={styles.sectionHeader}>GATT BLE SPECIFICATIONS</Text>
+        {/* Live Packet Monitor Terminal */}
+        <Text style={styles.sectionHeader}>LIVE GATT PACKET INSPECTOR (1Hz)</Text>
 
-        <View style={styles.specCard}>
-          <Text style={styles.specRow}><Text style={styles.specKey}>Service UUID: </Text>7d8a1000-6f2b-4a91-9c31-8f5e2d7a1001</Text>
-          <Text style={styles.specRow}><Text style={styles.specKey}>Char UUID: </Text>7d8a1001-6f2b-4a91-9c31-8f5e2d7a1001</Text>
-          <Text style={styles.specRow}><Text style={styles.specKey}>Device Name: </Text>HydraX-Health</Text>
-          <Text style={styles.specRow}><Text style={styles.specKey}>Baud Rate: </Text>115200 (Serial to BLE Bridge)</Text>
+        <View style={styles.terminalBox}>
+          <View style={styles.terminalHeader}>
+            <Terminal color="#34D399" size={14} />
+            <Text style={styles.terminalTitle}>GATT Characteristic Stream ({BLE_CONFIG.characteristicUuid.substring(0, 8)}...)</Text>
+          </View>
+
+          <View style={styles.terminalBody}>
+            {packetLogs.length > 0 ? (
+              packetLogs.map((log, idx) => (
+                <Text key={idx} style={styles.logLine}>{log}</Text>
+              ))
+            ) : (
+              <Text style={styles.logPlaceholder}>Waiting for GATT BLE notifications stream...</Text>
+            )}
+          </View>
         </View>
 
         <View style={{ height: 30 }} />
@@ -205,7 +302,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   heroTopRow: {
     flexDirection: 'row',
@@ -231,7 +328,6 @@ const styles = StyleSheet.create({
   statusBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#0D9488',
     marginTop: 2,
   },
   heroDesc: {
@@ -240,17 +336,72 @@ const styles = StyleSheet.create({
     marginTop: 10,
     lineHeight: 16,
   },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
   primaryConnectBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     backgroundColor: '#0D9488',
     borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 14,
+    paddingVertical: 10,
   },
   primaryConnectBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
+  },
+  simStreamBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(13, 148, 136, 0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  simStreamBtnText: {
+    color: '#0D9488',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  disconnectBtnFull: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    paddingVertical: 10,
+  },
+  disconnectBtnFullText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    marginBottom: 12,
+  },
+  errorText: {
+    fontSize: 11,
+    color: '#991B1B',
+    fontWeight: '600',
+    flex: 1,
   },
   sectionHeader: {
     fontSize: 10,
@@ -266,7 +417,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   sensorRow: {
     flexDirection: 'row',
@@ -293,20 +444,39 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#F1F5F9',
   },
-  specCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
+  terminalBox: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#1E293B',
+  },
+  terminalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    paddingBottom: 6,
   },
-  specRow: {
-    fontSize: 11,
-    color: '#475569',
-  },
-  specKey: {
+  terminalTitle: {
+    fontSize: 10,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#34D399',
+    letterSpacing: 0.5,
+  },
+  terminalBody: {
+    gap: 4,
+  },
+  logLine: {
+    fontSize: 10,
+    color: '#34D399',
+    fontFamily: 'monospace',
+  },
+  logPlaceholder: {
+    fontSize: 10,
+    color: '#64748B',
+    fontStyle: 'italic',
   },
 });
