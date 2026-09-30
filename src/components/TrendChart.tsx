@@ -89,6 +89,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   const gridY2 = paddingTop + (height - paddingTop - paddingBottom) * 0.5;
   const gridY3 = paddingTop + (height - paddingTop - paddingBottom) * 0.75;
 
+  // Sanitize title to create a 100% valid CSS/SVG identifier (no parentheses or spaces)
+  const gradId = `grad_${title.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
   return (
     <View style={styles.card}>
       {/* Top Header */}
@@ -148,9 +151,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
       <View style={styles.chartContainer}>
         <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
           <Defs>
-            <LinearGradient id={`grad-${title.replace(/\s+/g, '')}`} x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={color} stopOpacity="0.35" />
-              <Stop offset="60%" stopColor={color} stopOpacity="0.08" />
+            <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor={color} stopOpacity="0.25" />
+              <Stop offset="70%" stopColor={color} stopOpacity="0.05" />
               <Stop offset="100%" stopColor={color} stopOpacity="0.0" />
             </LinearGradient>
           </Defs>
@@ -173,8 +176,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             />
           )}
 
-          {/* Smooth Gradient Fill */}
-          <Path d={smoothAreaD} fill={`url(#grad-${title.replace(/\s+/g, '')})`} />
+          {/* Light Soft Gradient Fill */}
+          <Path d={smoothAreaD} fill={`url(#${gradId})`} />
 
           {/* Smooth Curved Trend Line */}
           <Path d={smoothLineD} stroke={color} strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" />
