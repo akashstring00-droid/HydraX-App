@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
-import { Bot, Send, Sparkles, User, Heart, Thermometer, Droplets, Wind } from 'lucide-react-native';
-import { defaultUserProfile } from '../data/mockData';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { Bot, Send, Sparkles, User, Heart, Thermometer, Droplets, Wind, Zap } from 'lucide-react-native';
 import { telemetryStore } from '../telemetry/TelemetryStore';
 import { HydraXTelemetry, DeviceConnectionState } from '../telemetry/telemetryTypes';
-import { AICoachMessage } from '../types';
+import { GroqAIService } from '../ai/GroqAIService';
+import { AICoachMessage, DisasterModeType } from '../types';
+import { sensorService } from '../sensors/SensorService';
 
 export const AICoachScreen: React.FC = () => {
   const [telemetry, setTelemetry] = useState<HydraXTelemetry | null>(null);
   const [connState, setConnState] = useState<DeviceConnectionState>(telemetryStore.getSnapshot().state);
+  const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
   const [inputText, setInputText] = useState<string>('');
+  const [isTyping, setIsTyping] = useState<boolean>(false);
 
   useEffect(() => {
     const unsubscribe = telemetryStore.subscribe((t, s) => {
@@ -19,7 +22,7 @@ export const AICoachScreen: React.FC = () => {
     return unsubscribe;
   }, []);
 
-  const hr = telemetry?.hr ?? '--';
+  const hr = telemetry?.hr ? `${telemetry.hr} BPM` : '--';
   const skinTemp = telemetry?.skinTemp ? `${telemetry.skinTemp.toFixed(1)}°C` : '--';
   const ambientTemp = telemetry?.ambientTemp ? `${telemetry.ambientTemp.toFixed(1)}°C` : '--';
   const humidity = telemetry?.humidity ? `${telemetry.humidity.toFixed(0)}%` : '--';
@@ -29,16 +32,16 @@ export const AICoachScreen: React.FC = () => {
     {
       id: 'm1',
       sender: 'coach',
-      text: `Hello Akash! I'm your HydraX Edge AI Companion. I analyze your live BLE hardware telemetry locally on your device. Currently: Heart Rate is ${hr}, Skin Temp is ${skinTemp}, and overall risk is ${risk}.`,
+      text: `Hello Akash! I'm your HydraX AI Companion powered by Groq Llama-3.3 70B. I analyze your live BLE hardware telemetry in real-time. Currently: Heart Rate is ${hr}, Skin Temp is ${skinTemp}, and overall risk is ${risk}. How can I assist you today?`,
       timestamp: 'Just now',
     },
   ];
 
   const [messages, setMessages] = useState<AICoachMessage[]>(initialMessages);
 
-  const handleSend = (textToSend?: string) => {
+  const handleSend = async (textToSend?: string) => {
     const query = (textToSend || inputText).trim();
-    if (!query) return;
+    if (!query || isTyping) return;
 
     const userMsg: AICoachMessage = {
       id: `u_${Date.now()}`,
@@ -49,50 +52,29 @@ export const AICoachScreen: React.FC = () => {
 
     setMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setInputText('');
+    setIsTyping(true);
 
-    setTimeout(() => {
-      const replyText = generateContextualAIResponse(query, telemetry, connState);
+    try {
+      const replyText = await GroqAIService.queryAICoach(
+        query,
+        telemetry,
+        connState,
+        disasterMode
+      );
+
       const coachMsg: AICoachMessage = {
         id: `c_${Date.now()}`,
         sender: 'coach',
         text: replyText,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
+
       setMessages((prev) => [...prev, coachMsg]);
-    }, 400);
-  };
-
-  const generateContextualAIResponse = (
-    query: string,
-    t: HydraXTelemetry | null,
-    s: DeviceConnectionState
-  ): string => {
-    const qLower = query.toLowerCase();
-
-    if (!s.connected && !s.isDemoMode) {
-      return `HydraX hardware band is currently disconnected. In disconnected state, live telemetry is unavailable, but your local risk engine remains ready on-device.`;
+    } catch (err) {
+      console.warn('[AICoach] Error querying AI:', err);
+    } finally {
+      setIsTyping(false);
     }
-
-    if (qLower.includes('risk') || qLower.includes('elevated')) {
-      return `Your overall risk level is currently ${t?.overallRisk || 'LOW'} (Score: ${t?.riskScore ?? 12}/100). MAX30102 Heart Rate is ${t?.hr ?? '--'} BPM, TMP117 Skin Temp is ${t?.skinTemp ? `${t.skinTemp.toFixed(1)}°C` : '--'}.`;
-    }
-
-    if (qLower.includes('water') || qLower.includes('hydration') || qLower.includes('drink')) {
-      return `Hydration risk is evaluated as ${t?.hydrationRisk || 'LOW'}. Based on ambient conditions (${t?.ambientTemp ? `${t.ambientTemp}°C` : 'normal'}, ${t?.humidity ? `${t.humidity}%` : 'normal'} humidity), drink 250ml of clean fluid every 45–60 minutes.`;
-    }
-
-    if (qLower.includes('heart rate') || qLower.includes('pulse')) {
-      return `Your live MAX30102 Heart Rate is ${t?.hr ?? '--'} BPM. Normal baseline is 60–100 BPM.`;
-    }
-
-    if (qLower.includes('rest') || qLower.includes('pause')) {
-      if (t?.heatRisk === 'HIGH' || (t?.skinTemp ?? 0) > 35) {
-        return `Yes, rest is strongly advised. Thermal indicators show high heat exposure. Move to shade and hydrate.`;
-      }
-      return `Physiological indicators are steady. Rest whenever you experience fatigue.`;
-    }
-
-    return `Based on live telemetry (HR ${t?.hr ?? '--'} BPM, Skin Temp ${t?.skinTemp ? `${t.skinTemp.toFixed(1)}°C` : '--'}, Ambient ${t?.ambientTemp ? `${t.ambientTemp}°C` : '--'}), your system is operating within normal physiological limits.`;
   };
 
   const quickActionChips = [
@@ -112,8 +94,13 @@ export const AICoachScreen: React.FC = () => {
           </View>
           <View>
             <Text style={styles.headerTitle}>HydraX AI Coach</Text>
-            <Text style={styles.headerSub}>Local On-Device Reasoning • Zero Cloud Dependency</Text>
+            <Text style={styles.headerSub}>Real-Time Sensor Reasoning</Text>
           </View>
+        </View>
+
+        <View style={styles.groqBadge}>
+          <Zap color="#F59E0B" size={11} />
+          <Text style={styles.groqBadgeText}>Groq Llama 3.3 70B</Text>
         </View>
       </View>
 
@@ -173,6 +160,18 @@ export const AICoachScreen: React.FC = () => {
           </View>
         ))}
 
+        {isTyping && (
+          <View style={styles.coachRow}>
+            <View style={styles.avatarBox}>
+              <Sparkles color="#0D9488" size={14} />
+            </View>
+            <View style={styles.typingBubble}>
+              <ActivityIndicator size="small" color="#0D9488" />
+              <Text style={styles.typingText}>Groq Llama 3.3 70B reasoning...</Text>
+            </View>
+          </View>
+        )}
+
         {/* Suggested Quick Action Chips */}
         <View style={styles.quickChipsContainer}>
           <Text style={styles.quickChipsLabel}>Suggested questions:</Text>
@@ -182,6 +181,7 @@ export const AICoachScreen: React.FC = () => {
                 key={idx}
                 style={styles.actionChip}
                 onPress={() => handleSend(chip)}
+                disabled={isTyping}
                 activeOpacity={0.75}
               >
                 <Text style={styles.actionChipText}>{chip}</Text>
@@ -204,13 +204,18 @@ export const AICoachScreen: React.FC = () => {
             value={inputText}
             onChangeText={setInputText}
             onSubmitEditing={() => handleSend()}
+            editable={!isTyping}
           />
           <TouchableOpacity 
-            style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]} 
+            style={[styles.sendButton, (!inputText.trim() || isTyping) && styles.sendButtonDisabled]} 
             onPress={() => handleSend()}
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || isTyping}
           >
-            <Send color="#FFFFFF" size={16} />
+            {isTyping ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Send color="#FFFFFF" size={16} />
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -258,6 +263,22 @@ const styles = StyleSheet.create({
   headerSub: {
     fontSize: 10,
     color: '#64748B',
+  },
+  groqBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.25)',
+  },
+  groqBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D97706',
   },
   contextStrip: {
     backgroundColor: '#FFFFFF',
@@ -344,6 +365,23 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderTopRightRadius: 4,
     padding: 12,
+  },
+  typingBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderTopLeftRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  typingText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontStyle: 'italic',
   },
   coachMsgText: {
     fontSize: 13,
