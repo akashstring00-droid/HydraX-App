@@ -386,6 +386,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   coachBubble: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderTopLeftRadius: 4,
@@ -394,6 +395,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   userBubble: {
+    flexShrink: 1,
     backgroundColor: '#0D9488',
     borderRadius: 16,
     borderTopRightRadius: 4,
