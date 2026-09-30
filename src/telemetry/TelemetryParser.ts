@@ -16,23 +16,47 @@ export class TelemetryParser {
 
       if (!raw || typeof raw !== 'object') return null;
 
-      const motionStr = (raw.motion || '').toUpperCase();
-      let motion: MotionType = 'NORMAL';
-      if (motionStr.includes('IMPACT') || motionStr.includes('FALL')) motion = 'IMPACT';
-      else if (motionStr.includes('ACTIVE') || motionStr.includes('HIGH')) motion = 'ACTIVE';
-      else if (motionStr.includes('NORMAL')) motion = 'NORMAL';
+      // Extract Motion status from multiple possible ESP32 JSON payload keys
+      const rawMotionStr = String(
+        raw.motion || 
+        (raw as any).mpu || 
+        (raw as any).accel || 
+        (raw as any).activity || 
+        (raw as any).status || 
+        ''
+      ).toUpperCase();
 
-      const hydraRiskStr = (raw.hydrationRisk || '').toUpperCase();
+      let motion: MotionType = 'NORMAL';
+      if (
+        rawMotionStr.includes('IMPACT') || 
+        rawMotionStr.includes('FALL') || 
+        rawMotionStr.includes('CRASH') ||
+        (raw as any).fallDetected === true
+      ) {
+        motion = 'IMPACT';
+      } else if (
+        rawMotionStr.includes('ACTIVE') || 
+        rawMotionStr.includes('HIGH') || 
+        rawMotionStr.includes('RUN') || 
+        rawMotionStr.includes('WALK') ||
+        (typeof (raw as any).ax === 'number' && Math.abs((raw as any).ax) > 15)
+      ) {
+        motion = 'ACTIVE';
+      } else if (rawMotionStr.length > 0) {
+        motion = 'NORMAL';
+      }
+
+      const hydraRiskStr = String(raw.hydrationRisk || '').toUpperCase();
       let hydrationRisk: HydrationRiskType = 'LOW';
       if (hydraRiskStr.includes('HIGH')) hydrationRisk = 'HIGH';
       else if (hydraRiskStr.includes('MODERATE')) hydrationRisk = 'MODERATE';
 
-      const heatRiskStr = (raw.heatRisk || '').toUpperCase();
+      const heatRiskStr = String(raw.heatRisk || '').toUpperCase();
       let heatRisk: HeatRiskType = 'LOW';
       if (heatRiskStr.includes('HIGH')) heatRisk = 'HIGH';
       else if (heatRiskStr.includes('MODERATE')) heatRisk = 'MODERATE';
 
-      const overallRiskStr = (raw.overallRisk || '').toUpperCase();
+      const overallRiskStr = String(raw.overallRisk || '').toUpperCase();
       let overallRisk: OverallRiskType = 'LOW';
       if (overallRiskStr.includes('CRITICAL')) overallRisk = 'CRITICAL';
       else if (overallRiskStr.includes('HIGH')) overallRisk = 'HIGH';
