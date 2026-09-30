@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { DeviceConnectionState } from '../telemetry/telemetryTypes';
+import { themeStore } from '../theme/ThemeStore';
 
 interface DeviceStatusProps {
   state: DeviceConnectionState;
@@ -8,6 +9,15 @@ interface DeviceStatusProps {
 }
 
 export const DeviceStatus: React.FC<DeviceStatusProps> = ({ state, onPress }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    const unsub = themeStore.subscribe((m) => setThemeMode(m));
+    return unsub;
+  }, []);
+
+  const isDark = themeMode === 'dark';
+
   let statusColor = '#94A3B8'; // gray
   let statusText = 'Disconnected';
 
@@ -35,10 +45,10 @@ export const DeviceStatus: React.FC<DeviceStatusProps> = ({ state, onPress }) =>
     : 'No packets';
 
   return (
-    <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.8}>
+    <TouchableOpacity style={[styles.container, isDark && styles.containerDark]} onPress={onPress} activeOpacity={0.8}>
       <View style={[styles.dot, { backgroundColor: statusColor }]} />
       <View style={styles.textCol}>
-        <Text style={styles.deviceName}>
+        <Text style={[styles.deviceName, isDark && styles.deviceNameDark]}>
           {state.isDemoMode ? 'HydraX-Demo-Sim' : state.deviceName || 'HydraX-Health'}
         </Text>
         <Text style={[styles.statusText, { color: statusColor }]}>
@@ -61,6 +71,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  containerDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
   dot: {
     width: 6,
     height: 6,
@@ -73,6 +87,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: '#0F172A',
+  },
+  deviceNameDark: {
+    color: '#F8FAFC',
   },
   statusText: {
     fontSize: 9,

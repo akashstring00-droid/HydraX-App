@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
+import { themeStore } from '../theme/ThemeStore';
 
 interface HealthScoreCardProps {
   score: number;
@@ -8,6 +9,14 @@ interface HealthScoreCardProps {
 }
 
 export const HealthScoreCard: React.FC<HealthScoreCardProps> = ({ score, riskLevel }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
+
   let badgeColor = '#0D9488'; // Teal
   if (riskLevel === 'MODERATE RISK') badgeColor = '#D97706';
   if (riskLevel === 'HIGH RISK' || riskLevel === 'CRITICAL RISK') badgeColor = '#DC2626';
@@ -30,7 +39,7 @@ export const HealthScoreCard: React.FC<HealthScoreCardProps> = ({ score, riskLev
             cx={70}
             cy={70}
             r={radius}
-            stroke="#E2E8F0"
+            stroke={isDark ? '#334155' : '#E2E8F0'}
             strokeWidth={strokeWidth}
             fill="none"
           />
@@ -50,8 +59,8 @@ export const HealthScoreCard: React.FC<HealthScoreCardProps> = ({ score, riskLev
         </Svg>
 
         <View style={styles.scoreTextOverlay}>
-          <Text style={styles.scoreNumber}>{score}</Text>
-          <Text style={styles.scoreSublabel}>HEALTH SCORE</Text>
+          <Text style={[styles.scoreNumber, isDark && styles.scoreNumberDark]}>{score}</Text>
+          <Text style={[styles.scoreSublabel, isDark && styles.scoreSublabelDark]}>HEALTH SCORE</Text>
         </View>
       </View>
 
@@ -61,7 +70,7 @@ export const HealthScoreCard: React.FC<HealthScoreCardProps> = ({ score, riskLev
         <Text style={[styles.riskText, { color: badgeColor }]}>{riskLevel}</Text>
       </View>
 
-      <Text style={styles.statementText}>
+      <Text style={[styles.statementText, isDark && styles.statementTextDark]}>
         "Your current indicators are within your personal baseline."
       </Text>
     </View>
@@ -96,12 +105,18 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     lineHeight: 50,
   },
+  scoreNumberDark: {
+    color: '#F8FAFC',
+  },
   scoreSublabel: {
     fontSize: 9,
     fontWeight: '800',
     color: '#64748B',
     letterSpacing: 1,
     marginTop: -2,
+  },
+  scoreSublabelDark: {
+    color: '#94A3B8',
   },
   statusRow: {
     flexDirection: 'row',
@@ -126,4 +141,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
   },
+  statementTextDark: {
+    color: '#94A3B8',
+  },
 });
+

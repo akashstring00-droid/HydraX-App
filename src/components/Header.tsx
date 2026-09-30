@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   const isDark = themeMode === 'dark';
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       {/* Top Bar */}
       <View style={styles.topRow}>
         {/* Left Branding & Avatar */}
@@ -45,13 +45,13 @@ export const Header: React.FC<HeaderProps> = ({
           </View>
           <View>
             <View style={styles.brandTitleRow}>
-              <Text style={styles.appName}>HydraX</Text>
+              <Text style={[styles.appName, isDark && styles.textDark]}>HydraX</Text>
               <View style={styles.edgeBadgeSmall}>
                 <View style={styles.greenDot} />
                 <Text style={styles.edgeBadgeText}>Local AI</Text>
               </View>
             </View>
-            <Text style={styles.greetingText}>Good morning, {userName}</Text>
+            <Text style={[styles.greetingText, isDark && styles.subDark]}>Good morning, {userName}</Text>
           </View>
         </View>
 
@@ -59,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
         <View style={styles.rightActions}>
           {/* Theme Switcher Moon/Sun Button */}
           <TouchableOpacity
-            style={styles.iconBtn}
+            style={[styles.iconBtn, isDark && styles.iconBtnDark]}
             onPress={() => themeStore.toggleTheme()}
             activeOpacity={0.7}
             title="Toggle Theme"
@@ -81,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Hackathon Demo Center Button */}
           <TouchableOpacity
-            style={styles.iconBtn}
+            style={[styles.iconBtn, isDark && styles.iconBtnDark]}
             onPress={onOpenDemoCenter}
             activeOpacity={0.7}
           >
@@ -90,7 +90,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Architecture / How it Works Button */}
           <TouchableOpacity
-            style={styles.iconBtn}
+            style={[styles.iconBtn, isDark && styles.iconBtnDark]}
             onPress={onOpenArchitecture}
             activeOpacity={0.7}
           >
@@ -100,7 +100,7 @@ export const Header: React.FC<HeaderProps> = ({
       </View>
 
       {/* Human Subtitle Statement */}
-      <Text style={styles.humanSubtitle}>Here's how your body is doing today.</Text>
+      <Text style={[styles.humanSubtitle, isDark && styles.subDark]}>Here's how your body is doing today.</Text>
 
       {/* Active Disaster Banner (Visible ONLY when active) */}
       {isDisasterActive && (
@@ -135,6 +135,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
+  },
+  containerDark: {
+    backgroundColor: '#0F172A',
+    borderBottomColor: '#1E293B',
   },
   topRow: {
     flexDirection: 'row',
@@ -172,10 +176,16 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     letterSpacing: -0.3,
   },
+  textDark: {
+    color: '#F8FAFC',
+  },
   greetingText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#475569',
+  },
+  subDark: {
+    color: '#94A3B8',
   },
   edgeBadgeSmall: {
     flexDirection: 'row',
@@ -232,6 +242,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  iconBtnDark: {
+    backgroundColor: '#1E293B',
   },
   humanSubtitle: {
     fontSize: 13,

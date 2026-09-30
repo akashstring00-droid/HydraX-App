@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Wind, Thermometer, Droplets, AlertCircle } from 'lucide-react-native';
 import { HydraXTelemetry, HeatRiskType } from '../telemetry/telemetryTypes';
+import { themeStore } from '../theme/ThemeStore';
 
 interface EnvironmentCardProps {
   telemetry: HydraXTelemetry | null;
@@ -14,6 +15,13 @@ export const EnvironmentCard: React.FC<EnvironmentCardProps> = ({
   isConnected,
   isDemoMode,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
   const showData = isConnected || isDemoMode;
   const temp = showData && telemetry && telemetry.ambientTemp > 0 ? `${telemetry.ambientTemp}°C` : '--';
   const humidity = showData && telemetry && telemetry.humidity > 0 ? `${telemetry.humidity}%` : '--';
@@ -24,7 +32,7 @@ export const EnvironmentCard: React.FC<EnvironmentCardProps> = ({
   if (heatRisk === 'HIGH') riskColor = '#DC2626';
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, isDark && styles.cardDark]}>
       <View style={styles.topHeader}>
         <View style={styles.titleGroup}>
           <Wind color="#0284C7" size={15} />
@@ -38,17 +46,17 @@ export const EnvironmentCard: React.FC<EnvironmentCardProps> = ({
         </View>
       </View>
 
-      <View style={styles.mainRow}>
+      <View style={[styles.mainRow, isDark && styles.mainRowDark]}>
         <View style={styles.metricItem}>
-          <Text style={styles.metricVal}>{temp}</Text>
-          <Text style={styles.metricLabel}>Ambient Temperature</Text>
+          <Text style={[styles.metricVal, isDark && styles.metricValDark]}>{temp}</Text>
+          <Text style={[styles.metricLabel, isDark && styles.metricLabelDark]}>Ambient Temperature</Text>
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, isDark && styles.dividerDark]} />
 
         <View style={styles.metricItem}>
-          <Text style={styles.metricVal}>{humidity}</Text>
-          <Text style={styles.metricLabel}>Relative Humidity</Text>
+          <Text style={[styles.metricVal, isDark && styles.metricValDark]}>{humidity}</Text>
+          <Text style={[styles.metricLabel, isDark && styles.metricLabelDark]}>Relative Humidity</Text>
         </View>
       </View>
 
@@ -72,6 +80,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginTop: 10,
+  },
+  cardDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   topHeader: {
     flexDirection: 'row',
@@ -107,6 +119,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
   },
+  mainRowDark: {
+    backgroundColor: '#0F172A',
+  },
   metricItem: {
     alignItems: 'center',
   },
@@ -115,15 +130,24 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#0F172A',
   },
+  metricValDark: {
+    color: '#F8FAFC',
+  },
   metricLabel: {
     fontSize: 9,
     color: '#64748B',
     marginTop: 2,
   },
+  metricLabelDark: {
+    color: '#94A3B8',
+  },
   divider: {
     width: 1,
     height: 24,
     backgroundColor: '#E2E8F0',
+  },
+  dividerDark: {
+    backgroundColor: '#334155',
   },
   warningBox: {
     flexDirection: 'row',
@@ -141,3 +165,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+

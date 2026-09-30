@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import { themeStore } from '../theme/ThemeStore';
 
 export type Timeframe = 'Today' | '7 Days' | '30 Days';
 
@@ -31,6 +32,13 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   baselineMin,
   baselineMax,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
   const [timeframe, setTimeframe] = useState<Timeframe>('Today');
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
@@ -92,25 +100,27 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   // Sanitize title to create a 100% valid CSS/SVG identifier (no parentheses or spaces)
   const gradId = `grad_${title.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
+  const gridLineColor = isDark ? '#334155' : '#F1F5F9';
+
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, isDark && styles.cardDark]}>
       {/* Top Header */}
       <View style={styles.headerRow}>
         <View style={styles.titleCol}>
-          <Text style={styles.title}>{title}</Text>
+          <Text style={[styles.title, isDark && styles.titleDark]}>{title}</Text>
           <View style={styles.valBadgeRow}>
-            <Text style={styles.currentValue}>{activePoint ? activePoint.val.toFixed(1).replace('.0', '') : '--'}</Text>
+            <Text style={[styles.currentValue, isDark && styles.currentValueDark]}>{activePoint ? activePoint.val.toFixed(1).replace('.0', '') : '--'}</Text>
             <Text style={styles.unitText}>{unit}</Text>
             {selectedIndex !== null && (
-              <View style={styles.timeTooltip}>
-                <Text style={styles.timeTooltipText}>{activePoint.label}</Text>
+              <View style={[styles.timeTooltip, isDark && styles.timeTooltipDark]}>
+                <Text style={[styles.timeTooltipText, isDark && styles.timeTooltipTextDark]}>{activePoint.label}</Text>
               </View>
             )}
           </View>
         </View>
 
         {/* Timeframe Chips */}
-        <View style={styles.timeframeContainer}>
+        <View style={[styles.timeframeContainer, isDark && styles.timeframeContainerDark]}>
           {(['Today', '7 Days', '30 Days'] as Timeframe[]).map((tf) => (
             <TouchableOpacity
               key={tf}
@@ -121,7 +131,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.tfText, timeframe === tf && styles.tfTextActive]}>
+              <Text style={[styles.tfText, isDark && styles.tfTextDark, timeframe === tf && styles.tfTextActive]}>
                 {tf}
               </Text>
             </TouchableOpacity>
@@ -130,20 +140,20 @@ export const TrendChart: React.FC<TrendChartProps> = ({
       </View>
 
       {/* Stats Quick Bar */}
-      <View style={styles.statsBar}>
+      <View style={[styles.statsBar, isDark && styles.statsBarDark]}>
         <View style={styles.statItem}>
           <Text style={styles.statLabel}>AVG</Text>
-          <Text style={styles.statVal}>{avgVal} {unit}</Text>
+          <Text style={[styles.statVal, isDark && styles.statValDark]}>{avgVal} {unit}</Text>
         </View>
-        <View style={styles.statDivider} />
+        <View style={[styles.statDivider, isDark && styles.statDividerDark]} />
         <View style={styles.statItem}>
           <Text style={styles.statLabel}>MIN</Text>
-          <Text style={styles.statVal}>{minObserved} {unit}</Text>
+          <Text style={[styles.statVal, isDark && styles.statValDark]}>{minObserved} {unit}</Text>
         </View>
-        <View style={styles.statDivider} />
+        <View style={[styles.statDivider, isDark && styles.statDividerDark]} />
         <View style={styles.statItem}>
           <Text style={styles.statLabel}>MAX</Text>
-          <Text style={styles.statVal}>{maxObserved} {unit}</Text>
+          <Text style={[styles.statVal, isDark && styles.statValDark]}>{maxObserved} {unit}</Text>
         </View>
       </View>
 
@@ -152,16 +162,16 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
           <Defs>
             <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={color} stopOpacity="0.25" />
+              <Stop offset="0%" stopColor={color} stopOpacity={isDark ? "0.35" : "0.25"} />
               <Stop offset="70%" stopColor={color} stopOpacity="0.05" />
               <Stop offset="100%" stopColor={color} stopOpacity="0.0" />
             </LinearGradient>
           </Defs>
 
           {/* Background Grid Lines */}
-          <Line x1={paddingX} y1={gridY1} x2={width - paddingX} y2={gridY1} stroke="#F1F5F9" strokeWidth="1" strokeDasharray="4 4" />
-          <Line x1={paddingX} y1={gridY2} x2={width - paddingX} y2={gridY2} stroke="#F1F5F9" strokeWidth="1" strokeDasharray="4 4" />
-          <Line x1={paddingX} y1={gridY3} x2={width - paddingX} y2={gridY3} stroke="#F1F5F9" strokeWidth="1" strokeDasharray="4 4" />
+          <Line x1={paddingX} y1={gridY1} x2={width - paddingX} y2={gridY1} stroke={gridLineColor} strokeWidth="1" strokeDasharray="4 4" />
+          <Line x1={paddingX} y1={gridY2} x2={width - paddingX} y2={gridY2} stroke={gridLineColor} strokeWidth="1" strokeDasharray="4 4" />
+          <Line x1={paddingX} y1={gridY3} x2={width - paddingX} y2={gridY3} stroke={gridLineColor} strokeWidth="1" strokeDasharray="4 4" />
 
           {/* Baseline Indicator Line if specified */}
           {baselineMax && baselineMin && (
@@ -170,7 +180,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               y1={height - paddingBottom - ((baselineMax - minVal) / (maxVal - minVal || 1)) * (height - paddingTop - paddingBottom)}
               x2={width - paddingX}
               y2={height - paddingBottom - ((baselineMax - minVal) / (maxVal - minVal || 1)) * (height - paddingTop - paddingBottom)}
-              stroke="#CBD5E1"
+              stroke={isDark ? "#475569" : "#CBD5E1"}
               strokeWidth="1.2"
               strokeDasharray="3 3"
             />
@@ -197,7 +207,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                   cx={pt.x}
                   cy={pt.y}
                   r={isSelected ? 4.5 : 2.5}
-                  fill={isSelected ? '#FFFFFF' : color}
+                  fill={isSelected ? (isDark ? '#0F172A' : '#FFFFFF') : color}
                   stroke={color}
                   strokeWidth={isSelected ? 2.5 : 0}
                 />
@@ -216,7 +226,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             style={styles.labelTouch}
             activeOpacity={0.6}
           >
-            <Text style={[styles.labelX, (selectedIndex === idx || (selectedIndex === null && idx === points.length - 1)) && { color, fontWeight: '800' }]}>
+            <Text style={[styles.labelX, isDark && styles.labelXDark, (selectedIndex === idx || (selectedIndex === null && idx === points.length - 1)) && { color, fontWeight: '800' }]}>
               {pt.label}
             </Text>
           </TouchableOpacity>
@@ -240,6 +250,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  cardDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+    shadowColor: '#000000',
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -256,6 +271,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
+  titleDark: {
+    color: '#94A3B8',
+  },
   valBadgeRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -267,6 +285,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#0F172A',
     letterSpacing: -0.5,
+  },
+  currentValueDark: {
+    color: '#F8FAFC',
   },
   unitText: {
     fontSize: 12,
@@ -280,10 +301,16 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginLeft: 6,
   },
+  timeTooltipDark: {
+    backgroundColor: '#0F172A',
+  },
   timeTooltipText: {
     fontSize: 10,
     fontWeight: '700',
     color: '#475569',
+  },
+  timeTooltipTextDark: {
+    color: '#CBD5E1',
   },
   timeframeContainer: {
     flexDirection: 'row',
@@ -291,6 +318,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 3,
     gap: 2,
+  },
+  timeframeContainerDark: {
+    backgroundColor: '#0F172A',
   },
   tfChip: {
     paddingHorizontal: 8,
@@ -301,6 +331,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#64748B',
+  },
+  tfTextDark: {
+    color: '#94A3B8',
   },
   tfTextActive: {
     color: '#FFFFFF',
@@ -318,6 +351,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F1F5F9',
   },
+  statsBarDark: {
+    backgroundColor: '#0F172A',
+    borderColor: '#334155',
+  },
   statItem: {
     alignItems: 'center',
   },
@@ -333,10 +370,16 @@ const styles = StyleSheet.create({
     color: '#334155',
     marginTop: 1,
   },
+  statValDark: {
+    color: '#F8FAFC',
+  },
   statDivider: {
     width: 1,
     height: 14,
     backgroundColor: '#E2E8F0',
+  },
+  statDividerDark: {
+    backgroundColor: '#334155',
   },
   chartContainer: {
     marginTop: 2,
@@ -358,5 +401,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#94A3B8',
   },
+  labelXDark: {
+    color: '#64748B',
+  },
 });
+
 

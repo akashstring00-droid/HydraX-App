@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Plus, Droplets } from 'lucide-react-native';
 import { HydrationRiskType } from '../telemetry/telemetryTypes';
+import { themeStore } from '../theme/ThemeStore';
 
 interface HydrationCardProps {
   hydrationRisk: HydrationRiskType;
@@ -16,6 +17,13 @@ export const HydrationCard: React.FC<HydrationCardProps> = ({
   targetLiters,
   onAddWater,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
   const percentage = Math.min(100, Math.round((consumedLiters / Math.max(1, targetLiters)) * 100));
   const remainingMl = Math.max(0, Math.round((targetLiters - consumedLiters) * 1000));
 
@@ -24,7 +32,7 @@ export const HydrationCard: React.FC<HydrationCardProps> = ({
   if (hydrationRisk === 'HIGH') riskColor = '#DC2626';
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, isDark && styles.cardDark]}>
       <View style={styles.topHeader}>
         <View style={styles.titleGroup}>
           <Droplets color="#0891B2" size={15} />
@@ -40,10 +48,10 @@ export const HydrationCard: React.FC<HydrationCardProps> = ({
 
       <View style={styles.mainRow}>
         <View style={styles.textCol}>
-          <Text style={styles.intakeVal}>
+          <Text style={[styles.intakeVal, isDark && styles.intakeValDark]}>
             {consumedLiters.toFixed(1)} L <Text style={styles.targetSub}>/ {targetLiters} L</Text>
           </Text>
-          <Text style={styles.remainingSub}>
+          <Text style={[styles.remainingSub, isDark && styles.remainingSubDark]}>
             {remainingMl > 0 ? `${remainingMl} ml remaining to offset thermal loss` : 'Daily fluid target met'}
           </Text>
         </View>
@@ -55,7 +63,7 @@ export const HydrationCard: React.FC<HydrationCardProps> = ({
       </View>
 
       {/* Progress Track */}
-      <View style={styles.progressTrack}>
+      <View style={[styles.progressTrack, isDark && styles.progressTrackDark]}>
         <View style={[styles.progressFill, { width: `${percentage}%` }]} />
       </View>
     </View>
@@ -70,6 +78,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginTop: 10,
+  },
+  cardDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   topHeader: {
     flexDirection: 'row',
@@ -110,6 +122,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#0F172A',
   },
+  intakeValDark: {
+    color: '#F8FAFC',
+  },
   targetSub: {
     fontSize: 12,
     fontWeight: '600',
@@ -119,6 +134,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#64748B',
     marginTop: 2,
+  },
+  remainingSubDark: {
+    color: '#94A3B8',
   },
   addBtn: {
     flexDirection: 'row',
@@ -141,9 +159,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
     overflow: 'hidden',
   },
+  progressTrackDark: {
+    backgroundColor: '#0F172A',
+  },
   progressFill: {
     height: '100%',
     backgroundColor: '#0891B2',
     borderRadius: 3,
   },
 });
+

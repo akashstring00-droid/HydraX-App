@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Sparkles, ArrowRight } from 'lucide-react-native';
 import { EnvironmentalMetrics, HealthMetrics } from '../types';
+import { themeStore } from '../theme/ThemeStore';
 
 interface AIInsightCardProps {
   health: HealthMetrics;
@@ -14,10 +15,17 @@ export const AIInsightCard: React.FC<AIInsightCardProps> = ({
   env,
   onViewAnalysis,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
   const hydrationPct = Math.round((health.hydrationLiters / Math.max(1, health.hydrationTarget)) * 100);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       <View style={styles.headerRow}>
         <View style={styles.labelGroup}>
           <Sparkles color="#0D9488" size={14} />
@@ -30,22 +38,22 @@ export const AIInsightCard: React.FC<AIInsightCardProps> = ({
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.statementText}>
+      <Text style={[styles.statementText, isDark && styles.statementTextDark]}>
         "Your body is handling today's heat well, but your environment may increase dehydration risk."
       </Text>
 
       {/* Tiny Factor Pills */}
       <View style={styles.factorsRow}>
-        <Text style={styles.factorPill}>{env.temperature}°C temp</Text>
-        <Text style={styles.factorPill}>{env.humidity}% humidity</Text>
-        <Text style={styles.factorPill}>AQI {env.aqi}</Text>
-        <Text style={styles.factorPill}>{hydrationPct}% hydration</Text>
+        <Text style={[styles.factorPill, isDark && styles.factorPillDark]}>{env.temperature}°C temp</Text>
+        <Text style={[styles.factorPill, isDark && styles.factorPillDark]}>{env.humidity}% humidity</Text>
+        <Text style={[styles.factorPill, isDark && styles.factorPillDark]}>AQI {env.aqi}</Text>
+        <Text style={[styles.factorPill, isDark && styles.factorPillDark]}>{hydrationPct}% hydration</Text>
       </View>
 
       {/* Recommended Action */}
-      <View style={styles.recommendedBox}>
+      <View style={[styles.recommendedBox, isDark && styles.recommendedBoxDark]}>
         <Text style={styles.recLabel}>RECOMMENDED</Text>
-        <Text style={styles.recBody}>Drink 250–300 ml of water and take a short break in the shade.</Text>
+        <Text style={[styles.recBody, isDark && styles.recBodyDark]}>Drink 250–300 ml of water and take a short break in the shade.</Text>
       </View>
     </View>
   );
@@ -59,6 +67,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginTop: 8,
+  },
+  containerDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   headerRow: {
     flexDirection: 'row',
@@ -93,6 +105,9 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     lineHeight: 18,
   },
+  statementTextDark: {
+    color: '#F8FAFC',
+  },
   factorsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -108,11 +123,18 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
   },
+  factorPillDark: {
+    color: '#CBD5E1',
+    backgroundColor: '#0F172A',
+  },
   recommendedBox: {
     backgroundColor: 'rgba(13, 148, 136, 0.08)',
     borderRadius: 10,
     padding: 10,
     marginTop: 12,
+  },
+  recommendedBoxDark: {
+    backgroundColor: 'rgba(13, 148, 136, 0.15)',
   },
   recLabel: {
     fontSize: 9,
@@ -127,4 +149,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 15,
   },
+  recBodyDark: {
+    color: '#F8FAFC',
+  },
 });
+

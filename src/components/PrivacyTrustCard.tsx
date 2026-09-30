@@ -1,15 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ShieldCheck, Check } from 'lucide-react-native';
+import { themeStore } from '../theme/ThemeStore';
 
 interface PrivacyTrustCardProps {
   onOpenPrivacy: () => void;
 }
 
 export const PrivacyTrustCard: React.FC<PrivacyTrustCardProps> = ({ onOpenPrivacy }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
+
   return (
     <TouchableOpacity 
-      style={styles.container} 
+      style={[styles.container, isDark && styles.containerDark]} 
       onPress={onOpenPrivacy}
       activeOpacity={0.8}
     >
@@ -17,7 +26,7 @@ export const PrivacyTrustCard: React.FC<PrivacyTrustCardProps> = ({ onOpenPrivac
         <ShieldCheck color="#059669" size={15} />
         <View style={styles.textCol}>
           <Text style={styles.title}>Your health data stays private</Text>
-          <Text style={styles.subtitle}>Health analysis is processed locally on your device.</Text>
+          <Text style={[styles.subtitle, isDark && styles.subtitleDark]}>Health analysis is processed locally on your device.</Text>
         </View>
       </View>
 
@@ -41,6 +50,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 8,
   },
+  containerDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
   leftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -60,6 +73,9 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 1,
   },
+  subtitleDark: {
+    color: '#94A3B8',
+  },
   badge: {
     backgroundColor: 'rgba(16, 185, 129, 0.1)',
     paddingHorizontal: 6,
@@ -72,3 +88,4 @@ const styles = StyleSheet.create({
     color: '#059669',
   },
 });
+

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Activity, Footprints, Flame, Gauge, AlertOctagon, Bike } from 'lucide-react-native';
 import { HydraXTelemetry, MotionType } from '../telemetry/telemetryTypes';
+import { themeStore } from '../theme/ThemeStore';
 
 interface LiveActivityCardProps {
   telemetry: HydraXTelemetry | null;
@@ -16,6 +17,13 @@ export const LiveActivityCard: React.FC<LiveActivityCardProps> = ({
   isDemoMode,
   onSelectActivityMode,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
   const showData = isConnected || isDemoMode;
   const motion: MotionType = showData && telemetry ? telemetry.motion : 'UNKNOWN';
 
@@ -52,7 +60,7 @@ export const LiveActivityCard: React.FC<LiveActivityCardProps> = ({
   const calText = showData && telemetry ? `${telemetry.activeCalories}` : '--';
 
   return (
-    <View style={[styles.card, motion === 'IMPACT' && styles.cardImpact]}>
+    <View style={[styles.card, isDark && styles.cardDark, motion === 'IMPACT' && styles.cardImpact]}>
       {/* Top Header */}
       <View style={styles.topRow}>
         <View style={styles.titleGroup}>
@@ -61,7 +69,7 @@ export const LiveActivityCard: React.FC<LiveActivityCardProps> = ({
           </View>
           <View>
             <Text style={styles.cardHeaderLabel}>MPU6500 MOTION RECOGNITION</Text>
-            <Text style={styles.activityTitle}>{showData ? activityTitle : 'DISCONNECTED'}</Text>
+            <Text style={[styles.activityTitle, isDark && styles.activityTitleDark]}>{showData ? activityTitle : 'DISCONNECTED'}</Text>
           </View>
         </View>
 
@@ -72,47 +80,47 @@ export const LiveActivityCard: React.FC<LiveActivityCardProps> = ({
       </View>
 
       {/* 4 Metrics Strip */}
-      <View style={styles.metricsGrid}>
+      <View style={[styles.metricsGrid, isDark && styles.metricsGridDark]}>
         <View style={styles.metricItem}>
           <View style={styles.metricLabelRow}>
             <Footprints color="#0EA5E9" size={13} />
-            <Text style={styles.metricLabel}>Steps</Text>
+            <Text style={[styles.metricLabel, isDark && styles.metricLabelDark]}>Steps</Text>
           </View>
-          <Text style={styles.metricValue}>{stepsText}</Text>
+          <Text style={[styles.metricValue, isDark && styles.metricValueDark]}>{stepsText}</Text>
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, isDark && styles.dividerDark]} />
 
         <View style={styles.metricItem}>
           <View style={styles.metricLabelRow}>
             <Gauge color="#8B5CF6" size={13} />
-            <Text style={styles.metricLabel}>Cadence</Text>
+            <Text style={[styles.metricLabel, isDark && styles.metricLabelDark]}>Cadence</Text>
           </View>
-          <Text style={styles.metricValue}>
+          <Text style={[styles.metricValue, isDark && styles.metricValueDark]}>
             {cadenceText} <Text style={styles.unitText}>{motion === 'CYCLING' ? 'RPM' : 'SPM'}</Text>
           </Text>
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, isDark && styles.dividerDark]} />
 
         <View style={styles.metricItem}>
           <View style={styles.metricLabelRow}>
             <Activity color="#F59E0B" size={13} />
-            <Text style={styles.metricLabel}>Speed</Text>
+            <Text style={[styles.metricLabel, isDark && styles.metricLabelDark]}>Speed</Text>
           </View>
-          <Text style={styles.metricValue}>
+          <Text style={[styles.metricValue, isDark && styles.metricValueDark]}>
             {speedText} <Text style={styles.unitText}>km/h</Text>
           </Text>
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, isDark && styles.dividerDark]} />
 
         <View style={styles.metricItem}>
           <View style={styles.metricLabelRow}>
             <Flame color="#EF4444" size={13} />
-            <Text style={styles.metricLabel}>Calories</Text>
+            <Text style={[styles.metricLabel, isDark && styles.metricLabelDark]}>Calories</Text>
           </View>
-          <Text style={styles.metricValue}>
+          <Text style={[styles.metricValue, isDark && styles.metricValueDark]}>
             {calText} <Text style={styles.unitText}>kcal</Text>
           </Text>
         </View>
@@ -120,17 +128,17 @@ export const LiveActivityCard: React.FC<LiveActivityCardProps> = ({
 
       {/* Activity Switch Chips (Testing Controls) */}
       {onSelectActivityMode && (
-        <View style={styles.chipsContainer}>
+        <View style={[styles.chipsContainer, isDark && styles.chipsContainerDark]}>
           <Text style={styles.chipsHeader}>SIMULATE MOTION SENSOR STATE:</Text>
           <View style={styles.chipsRow}>
             {(['RESTING', 'WALKING', 'RUNNING', 'CYCLING', 'IMPACT'] as MotionType[]).map((mode) => (
               <TouchableOpacity
                 key={mode}
-                style={[styles.chip, motion === mode && styles.chipActive]}
+                style={[styles.chip, isDark && styles.chipDark, motion === mode && styles.chipActive]}
                 onPress={() => onSelectActivityMode(mode)}
                 activeOpacity={0.75}
               >
-                <Text style={[styles.chipText, motion === mode && styles.chipTextActive]}>
+                <Text style={[styles.chipText, isDark && styles.chipTextDark, motion === mode && styles.chipTextActive]}>
                   {mode === 'RESTING' ? '🧘 Rest' : mode === 'WALKING' ? '🚶 Walk' : mode === 'RUNNING' ? '🏃 Run' : mode === 'CYCLING' ? '🚴 Cycle' : '🚨 Fall'}
                 </Text>
               </TouchableOpacity>
@@ -150,6 +158,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginTop: 10,
+  },
+  cardDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   cardImpact: {
     borderColor: '#EF4444',
@@ -184,6 +196,9 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     marginTop: 1,
   },
+  activityTitleDark: {
+    color: '#F8FAFC',
+  },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -211,6 +226,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     marginTop: 12,
   },
+  metricsGridDark: {
+    backgroundColor: '#0F172A',
+  },
   metricItem: {
     alignItems: 'center',
     flex: 1,
@@ -225,11 +243,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#64748B',
   },
+  metricLabelDark: {
+    color: '#94A3B8',
+  },
   metricValue: {
     fontSize: 15,
     fontWeight: '900',
     color: '#0F172A',
     marginTop: 3,
+  },
+  metricValueDark: {
+    color: '#F8FAFC',
   },
   unitText: {
     fontSize: 9,
@@ -241,11 +265,17 @@ const styles = StyleSheet.create({
     height: 22,
     backgroundColor: '#E2E8F0',
   },
+  dividerDark: {
+    backgroundColor: '#334155',
+  },
   chipsContainer: {
     marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+  },
+  chipsContainerDark: {
+    borderTopColor: '#334155',
   },
   chipsHeader: {
     fontSize: 9,
@@ -265,6 +295,9 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 8,
   },
+  chipDark: {
+    backgroundColor: '#334155',
+  },
   chipActive: {
     backgroundColor: '#0D9488',
   },
@@ -273,7 +306,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#475569',
   },
+  chipTextDark: {
+    color: '#CBD5E1',
+  },
   chipTextActive: {
     color: '#FFFFFF',
   },
 });
+

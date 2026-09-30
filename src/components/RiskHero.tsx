@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { EvaluatedRiskResult } from '../ai/RiskEngine';
+import { themeStore } from '../theme/ThemeStore';
 
 interface RiskHeroProps {
   assessment: EvaluatedRiskResult;
@@ -15,6 +16,15 @@ export const RiskHero: React.FC<RiskHeroProps> = ({
   isConnected,
   isDemoMode,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    const unsub = themeStore.subscribe((m) => setThemeMode(m));
+    return unsub;
+  }, []);
+
+  const isDark = themeMode === 'dark';
+
   let badgeColor = '#059669'; // Green
   let badgeBg = 'rgba(5, 150, 105, 0.1)';
 
@@ -26,7 +36,7 @@ export const RiskHero: React.FC<RiskHeroProps> = ({
     badgeBg = 'rgba(220, 38, 38, 0.1)';
   } else if (!isConnected && !isDemoMode) {
     badgeColor = '#64748B';
-    badgeBg = '#F1F5F9';
+    badgeBg = isDark ? '#1E293B' : '#F1F5F9';
   }
 
   const updatedSecAgo = lastUpdatedMs
@@ -34,7 +44,7 @@ export const RiskHero: React.FC<RiskHeroProps> = ({
     : null;
 
   return (
-    <View style={[styles.card, { borderColor: badgeColor }]}>
+    <View style={[styles.card, isDark && styles.cardDark, { borderColor: badgeColor }]}>
       <View style={styles.topRow}>
         <Text style={styles.cardHeaderTitle}>CURRENT RISK</Text>
         {isDemoMode && (
@@ -49,7 +59,7 @@ export const RiskHero: React.FC<RiskHeroProps> = ({
           <Text style={[styles.riskLevelText, { color: badgeColor }]}>
             {isConnected || isDemoMode ? assessment.overallRisk : 'DISCONNECTED'}
           </Text>
-          <Text style={styles.statementText}>{assessment.recommendation}</Text>
+          <Text style={[styles.statementText, isDark && styles.statementTextDark]}>{assessment.recommendation}</Text>
         </View>
 
         <View style={[styles.scoreBox, { backgroundColor: badgeBg }]}>
@@ -60,7 +70,7 @@ export const RiskHero: React.FC<RiskHeroProps> = ({
         </View>
       </View>
 
-      <View style={styles.footerRow}>
+      <View style={[styles.footerRow, isDark && styles.footerRowDark]}>
         <Text style={styles.updatedText}>
           {isConnected || isDemoMode
             ? `Updated ${updatedSecAgo !== null ? `${updatedSecAgo} sec ago` : 'just now'}`
@@ -78,6 +88,9 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1.5,
     marginTop: 10,
+  },
+  cardDark: {
+    backgroundColor: '#1E293B',
   },
   topRow: {
     flexDirection: 'row',
@@ -122,6 +135,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 16,
   },
+  statementTextDark: {
+    color: '#CBD5E1',
+  },
   scoreBox: {
     width: 68,
     height: 68,
@@ -144,6 +160,9 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+  },
+  footerRowDark: {
+    borderTopColor: '#334155',
   },
   updatedText: {
     fontSize: 10,

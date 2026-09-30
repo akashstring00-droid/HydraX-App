@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Heart, Activity, Thermometer, Droplets } from 'lucide-react-native';
+import { themeStore } from '../theme/ThemeStore';
 
 export type VitalType = 'heartRate' | 'spO2' | 'temperature' | 'hydration';
 
@@ -19,6 +20,15 @@ export const VitalsCard: React.FC<VitalsCardProps> = ({
   statusText,
   isNormal = true,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    const unsub = themeStore.subscribe((m) => setThemeMode(m));
+    return unsub;
+  }, []);
+
+  const isDark = themeMode === 'dark';
+
   let title = '';
   let IconComp = Heart;
   let iconColor = '#F43F5E';
@@ -44,14 +54,14 @@ export const VitalsCard: React.FC<VitalsCardProps> = ({
   const statusColor = isNormal ? '#059669' : '#DC2626';
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.containerDark]}>
       <View style={styles.topRow}>
         <IconComp color={iconColor} size={16} />
-        <Text style={styles.titleText}>{title}</Text>
+        <Text style={[styles.titleText, isDark && styles.titleTextDark]}>{title}</Text>
       </View>
 
       <View style={styles.valueRow}>
-        <Text style={styles.valText}>{value}</Text>
+        <Text style={[styles.valText, isDark && styles.valTextDark]}>{value}</Text>
         {unit ? <Text style={styles.unitText}>{unit}</Text> : null}
       </View>
 
@@ -70,7 +80,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  containerDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
   },
   topRow: {
     flexDirection: 'row',
@@ -82,6 +96,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#64748B',
   },
+  titleTextDark: {
+    color: '#94A3B8',
+  },
   valueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -92,6 +109,9 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
     color: '#0F172A',
+  },
+  valTextDark: {
+    color: '#F8FAFC',
   },
   unitText: {
     fontSize: 11,

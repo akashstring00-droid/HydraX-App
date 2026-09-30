@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Heart, Thermometer, Wind, Droplets, Activity, AlertOctagon } from 'lucide-react-native';
 import { HydraXTelemetry } from '../telemetry/telemetryTypes';
+import { themeStore } from '../theme/ThemeStore';
 
 interface LiveVitalsGridProps {
   telemetry: HydraXTelemetry | null;
@@ -14,6 +15,13 @@ export const LiveVitalsGrid: React.FC<LiveVitalsGridProps> = ({
   isConnected,
   isDemoMode,
 }) => {
+  const [themeMode, setThemeMode] = useState(themeStore.getMode());
+
+  useEffect(() => {
+    return themeStore.subscribe((m) => setThemeMode(m));
+  }, []);
+
+  const isDark = themeMode === 'dark';
   const showData = isConnected || isDemoMode;
 
   const hrVal = showData && telemetry && telemetry.hr > 0 ? `${telemetry.hr}` : '--';
@@ -28,56 +36,56 @@ export const LiveVitalsGrid: React.FC<LiveVitalsGridProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>LIVE HARDWARE SENSOR VITALS</Text>
+      <Text style={[styles.sectionTitle, isDark && styles.sectionTitleDark]}>LIVE HARDWARE SENSOR VITALS</Text>
 
       <View style={styles.grid}>
         {/* Heart Rate (MAX30102) */}
-        <View style={styles.tile}>
+        <View style={[styles.tile, isDark && styles.tileDark]}>
           <View style={styles.tileHeader}>
             <Heart color="#F43F5E" size={15} />
-            <Text style={styles.tileLabel}>Heart Rate</Text>
+            <Text style={[styles.tileLabel, isDark && styles.tileLabelDark]}>Heart Rate</Text>
           </View>
           <View style={styles.valRow}>
-            <Text style={styles.valText}>{hrVal}</Text>
+            <Text style={[styles.valText, isDark && styles.valTextDark]}>{hrVal}</Text>
             {hrVal !== '--' && <Text style={styles.unitText}>BPM</Text>}
           </View>
           <Text style={styles.sensorSource}>MAX30102 • {showData && telemetry?.hr ? (telemetry.hr > 100 ? 'Elevated' : 'Normal') : 'No Data'}</Text>
         </View>
 
         {/* Skin Temp (TMP117) */}
-        <View style={styles.tile}>
+        <View style={[styles.tile, isDark && styles.tileDark]}>
           <View style={styles.tileHeader}>
             <Thermometer color="#D97706" size={15} />
-            <Text style={styles.tileLabel}>Skin Temp</Text>
+            <Text style={[styles.tileLabel, isDark && styles.tileLabelDark]}>Skin Temp</Text>
           </View>
           <View style={styles.valRow}>
-            <Text style={styles.valText}>{skinTempVal}</Text>
+            <Text style={[styles.valText, isDark && styles.valTextDark]}>{skinTempVal}</Text>
             {skinTempVal !== '--' && <Text style={styles.unitText}>°C</Text>}
           </View>
           <Text style={styles.sensorSource}>TMP117 • {showData && telemetry?.skinTemp ? (telemetry.skinTemp > 35 ? 'Warm' : 'Normal') : 'No Data'}</Text>
         </View>
 
         {/* Ambient Temp (DHT11) */}
-        <View style={styles.tile}>
+        <View style={[styles.tile, isDark && styles.tileDark]}>
           <View style={styles.tileHeader}>
             <Wind color="#0284C7" size={15} />
-            <Text style={styles.tileLabel}>Ambient Temp</Text>
+            <Text style={[styles.tileLabel, isDark && styles.tileLabelDark]}>Ambient Temp</Text>
           </View>
           <View style={styles.valRow}>
-            <Text style={styles.valText}>{ambientTempVal}</Text>
+            <Text style={[styles.valText, isDark && styles.valTextDark]}>{ambientTempVal}</Text>
             {ambientTempVal !== '--' && <Text style={styles.unitText}>°C</Text>}
           </View>
           <Text style={styles.sensorSource}>DHT11 • {showData && telemetry?.ambientTemp ? (telemetry.ambientTemp > 34 ? 'Hot' : 'Normal') : 'No Data'}</Text>
         </View>
 
         {/* Humidity (DHT11) */}
-        <View style={styles.tile}>
+        <View style={[styles.tile, isDark && styles.tileDark]}>
           <View style={styles.tileHeader}>
             <Droplets color="#0891B2" size={15} />
-            <Text style={styles.tileLabel}>Humidity</Text>
+            <Text style={[styles.tileLabel, isDark && styles.tileLabelDark]}>Humidity</Text>
           </View>
           <View style={styles.valRow}>
-            <Text style={styles.valText}>{humidityVal}</Text>
+            <Text style={[styles.valText, isDark && styles.valTextDark]}>{humidityVal}</Text>
             {humidityVal !== '--' && <Text style={styles.unitText}>%</Text>}
           </View>
           <Text style={styles.sensorSource}>DHT11 • {showData && telemetry?.humidity ? (telemetry.humidity > 70 ? 'High' : 'Normal') : 'No Data'}</Text>
@@ -85,7 +93,11 @@ export const LiveVitalsGrid: React.FC<LiveVitalsGridProps> = ({
       </View>
 
       {/* MPU6500 Motion & Fall Sensor Card (Full Width Banner) */}
-      <View style={[styles.motionTile, { borderColor: showData && motionVal === 'IMPACT' ? '#EF4444' : '#E2E8F0' }]}>
+      <View style={[
+        styles.motionTile, 
+        isDark && styles.motionTileDark,
+        { borderColor: showData && motionVal === 'IMPACT' ? '#EF4444' : (isDark ? '#334155' : '#E2E8F0') }
+      ]}>
         <View style={styles.motionHeaderRow}>
           <View style={styles.motionTitleGroup}>
             {motionVal === 'IMPACT' ? (
@@ -94,7 +106,7 @@ export const LiveVitalsGrid: React.FC<LiveVitalsGridProps> = ({
               <Activity color="#0D9488" size={18} />
             )}
             <View>
-              <Text style={styles.motionTitle}>Motion & Fall Sensor</Text>
+              <Text style={[styles.motionTitle, isDark && styles.motionTitleDark]}>Motion & Fall Sensor</Text>
               <Text style={styles.motionSub}>MPU6500 6-Axis Accelerometer & Gyro</Text>
             </View>
           </View>
@@ -122,6 +134,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginBottom: 8,
   },
+  sectionTitleDark: {
+    color: '#64748B',
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -136,6 +151,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  tileDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
   tileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -145,6 +164,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#64748B',
+  },
+  tileLabelDark: {
+    color: '#94A3B8',
   },
   valRow: {
     flexDirection: 'row',
@@ -156,6 +178,9 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
     color: '#0F172A',
+  },
+  valTextDark: {
+    color: '#F8FAFC',
   },
   unitText: {
     fontSize: 11,
@@ -175,6 +200,10 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     marginTop: 10,
   },
+  motionTileDark: {
+    backgroundColor: '#1E293B',
+    borderColor: '#334155',
+  },
   motionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -189,6 +218,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: '#0F172A',
+  },
+  motionTitleDark: {
+    color: '#F8FAFC',
   },
   motionSub: {
     fontSize: 10,
@@ -213,3 +245,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
+
