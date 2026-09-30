@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { Bot, Send, Sparkles, User, Heart, Thermometer, Droplets, Wind, Zap } from 'lucide-react-native';
+import { Bot, Send, Sparkles, User, Heart, Thermometer, Droplets, Wind, Zap, MessageSquare } from 'lucide-react-native';
 import { telemetryStore } from '../telemetry/TelemetryStore';
 import { HydraXTelemetry, DeviceConnectionState } from '../telemetry/telemetryTypes';
 import { GroqAIService } from '../ai/GroqAIService';
@@ -13,6 +13,8 @@ export const AICoachScreen: React.FC = () => {
   const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
   const [inputText, setInputText] = useState<string>('');
   const [isTyping, setIsTyping] = useState<boolean>(false);
+
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     const unsubscribe = telemetryStore.subscribe((t, s) => {
@@ -32,12 +34,18 @@ export const AICoachScreen: React.FC = () => {
     {
       id: 'm1',
       sender: 'coach',
-      text: `Hello Akash! I'm your HydraX AI Companion powered by Groq Llama-3.3 70B. I analyze your live BLE hardware telemetry in real-time. Currently: Heart Rate is ${hr}, Skin Temp is ${skinTemp}, and overall risk is ${risk}. How can I assist you today?`,
+      text: `Hey Akash! 👋 I'm your HydraX Personal Health Companion powered by Groq Llama-3.3 70B.\n\nI'm connected to your live wearable telemetry: Heart Rate is **${hr}**, Skin Temp is **${skinTemp}**, Ambient Climate is **${ambientTemp} (${humidity})**, and overall Risk is **${risk}**.\n\nHow are you feeling right now? Ask me anything about your health, recovery, exercise, or hydration!`,
       timestamp: 'Just now',
     },
   ];
 
   const [messages, setMessages] = useState<AICoachMessage[]>(initialMessages);
+
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
 
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend || inputText).trim();
@@ -50,13 +58,22 @@ export const AICoachScreen: React.FC = () => {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     if (!textToSend) setInputText('');
     setIsTyping(true);
+    scrollToBottom();
 
     try {
+      // Pass full conversation history for ChatGPT-style multi-turn memory
+      const historyItems = newMessages.map((m) => ({
+        sender: m.sender,
+        text: m.text,
+      }));
+
       const replyText = await GroqAIService.queryAICoach(
         query,
+        historyItems,
         telemetry,
         connState,
         disasterMode
@@ -74,15 +91,30 @@ export const AICoachScreen: React.FC = () => {
       console.warn('[AICoach] Error querying AI:', err);
     } finally {
       setIsTyping(false);
+      scrollToBottom();
     }
   };
 
   const quickActionChips = [
-    'Why is my risk changing?',
-    'Should I rest right now?',
-    'How much water should I drink?',
-    'Explain MAX30102 heart rate',
+    'How am I doing today? 🩺',
+    'Explain my heart rate & recovery 💓',
+    'Give me a hydration & rest plan 💧',
+    'What workout should I do? 🏃',
   ];
+
+  const renderFormattedText = (text: string, isUser: boolean) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <Text key={idx} style={[styles.boldText, isUser && styles.userBoldText]}>
+            {part.slice(2, -2)}
+          </Text>
+        );
+      }
+      return part;
+    });
+  };
 
   return (
     <View style={styles.container}>
@@ -93,8 +125,8 @@ export const AICoachScreen: React.FC = () => {
             <Bot color="#0D9488" size={20} />
           </View>
           <View>
-            <Text style={styles.headerTitle}>HydraX AI Coach</Text>
-            <Text style={styles.headerSub}>Real-Time Sensor Reasoning</Text>
+            <Text style={styles.headerTitle}>HydraX Personal Health Coach</Text>
+            <Text style={styles.headerSub}>ChatGPT-Style Real-Time Intelligence</Text>
           </View>
         </View>
 
@@ -133,6 +165,7 @@ export const AICoachScreen: React.FC = () => {
 
       {/* Messages Scroll View */}
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.messagesContainer} 
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
@@ -147,7 +180,7 @@ export const AICoachScreen: React.FC = () => {
 
             <View style={msg.sender === 'user' ? styles.userBubble : styles.coachBubble}>
               <Text style={msg.sender === 'user' ? styles.userMsgText : styles.coachMsgText}>
-                {msg.text}
+                {renderFormattedText(msg.text, msg.sender === 'user')}
               </Text>
               <Text style={msg.sender === 'user' ? styles.userMsgTime : styles.coachMsgTime}>{msg.timestamp}</Text>
             </View>
@@ -167,14 +200,14 @@ export const AICoachScreen: React.FC = () => {
             </View>
             <View style={styles.typingBubble}>
               <ActivityIndicator size="small" color="#0D9488" />
-              <Text style={styles.typingText}>Groq Llama 3.3 70B reasoning...</Text>
+              <Text style={styles.typingText}>Health Coach is thinking...</Text>
             </View>
           </View>
         )}
 
         {/* Suggested Quick Action Chips */}
         <View style={styles.quickChipsContainer}>
-          <Text style={styles.quickChipsLabel}>Suggested questions:</Text>
+          <Text style={styles.quickChipsLabel}>Try asking your coach:</Text>
           <View style={styles.quickChipsGrid}>
             {quickActionChips.map((chip, idx) => (
               <TouchableOpacity
@@ -199,7 +232,7 @@ export const AICoachScreen: React.FC = () => {
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.textInput}
-            placeholder="Ask AI Coach about health or environment..."
+            placeholder="Ask your Personal Health Coach anything..."
             placeholderTextColor="#94A3B8"
             value={inputText}
             onChangeText={setInputText}
@@ -255,7 +288,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(13, 148, 136, 0.2)',
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
     color: '#0F172A',
     letterSpacing: -0.3,
@@ -325,14 +358,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    maxWidth: '88%',
+    maxWidth: '90%',
   },
   userRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     alignSelf: 'flex-end',
     gap: 8,
-    maxWidth: '88%',
+    maxWidth: '90%',
   },
   avatarBox: {
     width: 28,
@@ -354,17 +387,17 @@ const styles = StyleSheet.create({
   },
   coachBubble: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 16,
     borderTopLeftRadius: 4,
-    padding: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   userBubble: {
     backgroundColor: '#0D9488',
-    borderRadius: 14,
+    borderRadius: 16,
     borderTopRightRadius: 4,
-    padding: 12,
+    padding: 14,
   },
   typingBubble: {
     flexDirection: 'row',
@@ -386,24 +419,32 @@ const styles = StyleSheet.create({
   coachMsgText: {
     fontSize: 13,
     color: '#0F172A',
-    lineHeight: 18,
+    lineHeight: 19,
   },
   userMsgText: {
     fontSize: 13,
     color: '#FFFFFF',
-    lineHeight: 18,
+    lineHeight: 19,
     fontWeight: '500',
+  },
+  boldText: {
+    fontWeight: '800',
+    color: '#0D9488',
+  },
+  userBoldText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   coachMsgTime: {
     fontSize: 9,
     color: '#94A3B8',
-    marginTop: 4,
+    marginTop: 6,
     alignSelf: 'flex-end',
   },
   userMsgTime: {
     fontSize: 9,
     color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 4,
+    marginTop: 6,
     alignSelf: 'flex-end',
   },
   quickChipsContainer: {
@@ -426,9 +467,9 @@ const styles = StyleSheet.create({
   },
   actionChip: {
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
@@ -451,14 +492,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     color: '#0F172A',
     fontSize: 13,
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#0D9488',
     justifyContent: 'center',
     alignItems: 'center',
