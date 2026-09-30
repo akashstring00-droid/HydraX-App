@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { Bot, Send, Sparkles, User, Heart, Thermometer, Droplets, Wind, Zap, MessageSquare } from 'lucide-react-native';
+import { Bot, Send, Sparkles, User, Heart, Thermometer, Droplets, Wind, Zap, Trash2 } from 'lucide-react-native';
 import { telemetryStore } from '../telemetry/TelemetryStore';
 import { HydraXTelemetry, DeviceConnectionState } from '../telemetry/telemetryTypes';
 import { GroqAIService } from '../ai/GroqAIService';
 import { AICoachMessage, DisasterModeType } from '../types';
 import { sensorService } from '../sensors/SensorService';
+import { aiCoachStore } from '../ai/AICoachStore';
 
 export const AICoachScreen: React.FC = () => {
   const [telemetry, setTelemetry] = useState<HydraXTelemetry | null>(null);
@@ -13,15 +14,22 @@ export const AICoachScreen: React.FC = () => {
   const [disasterMode, setDisasterMode] = useState<DisasterModeType>(sensorService.getDisasterMode());
   const [inputText, setInputText] = useState<string>('');
   const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [messages, setMessages] = useState<AICoachMessage[]>(aiCoachStore.getMessages());
 
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    const unsubscribe = telemetryStore.subscribe((t, s) => {
+    const unsubTelemetry = telemetryStore.subscribe((t, s) => {
       setTelemetry(t);
       setConnState(s);
     });
-    return unsubscribe;
+    const unsubChat = aiCoachStore.subscribe((msgs) => {
+      setMessages(msgs);
+    });
+    return () => {
+      unsubTelemetry();
+      unsubChat();
+    };
   }, []);
 
   const hr = telemetry?.hr ? `${telemetry.hr} BPM` : '--';
@@ -29,17 +37,6 @@ export const AICoachScreen: React.FC = () => {
   const ambientTemp = telemetry?.ambientTemp ? `${telemetry.ambientTemp.toFixed(1)}°C` : '--';
   const humidity = telemetry?.humidity ? `${telemetry.humidity.toFixed(0)}%` : '--';
   const risk = telemetry?.overallRisk ?? (connState.connected ? 'LOW' : 'DISCONNECTED');
-
-  const initialMessages: AICoachMessage[] = [
-    {
-      id: 'm1',
-      sender: 'coach',
-      text: `Hey Akash! 👋 Main aapka HydraX Personal Health Coach hu powered by Groq Llama-3.3 70B.\n\nAapke live wearable sensors connected hain: Heart Rate **${hr}**, Skin Temp **${skinTemp}**, Ambient Temp **${ambientTemp} (${humidity})**, aur Risk **${risk}** hai.\n\nAaj aap kaisa feel kar rahe ho? Apni health, workout, recovery ya hydration ke baare me mujhse kuch bhi pooch sakte ho!`,
-      timestamp: 'Just now',
-    },
-  ];
-
-  const [messages, setMessages] = useState<AICoachMessage[]>(initialMessages);
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -58,15 +55,14 @@ export const AICoachScreen: React.FC = () => {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    aiCoachStore.addMessage(userMsg);
     if (!textToSend) setInputText('');
     setIsTyping(true);
     scrollToBottom();
 
     try {
-      // Pass full conversation history for ChatGPT-style multi-turn memory
-      const historyItems = newMessages.map((m) => ({
+      const currentMsgs = aiCoachStore.getMessages();
+      const historyItems = currentMsgs.map((m) => ({
         sender: m.sender,
         text: m.text,
       }));
@@ -86,7 +82,7 @@ export const AICoachScreen: React.FC = () => {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
-      setMessages((prev) => [...prev, coachMsg]);
+      aiCoachStore.addMessage(coachMsg);
     } catch (err) {
       console.warn('[AICoach] Error querying AI:', err);
     } finally {
@@ -130,9 +126,18 @@ export const AICoachScreen: React.FC = () => {
           </View>
         </View>
 
-        <View style={styles.groqBadge}>
-          <Zap color="#F59E0B" size={11} />
-          <Text style={styles.groqBadgeText}>Groq Llama 3.3 70B</Text>
+        <View style={styles.headerRightGroup}>
+          <TouchableOpacity 
+            style={styles.clearBtn} 
+            onPress={() => aiCoachStore.clearChat()}
+            title="Clear Chat"
+          >
+            <Trash2 color="#64748B" size={15} />
+          </TouchableOpacity>
+          <View style={styles.groqBadge}>
+            <Zap color="#F59E0B" size={11} />
+            <Text style={styles.groqBadgeText}>Groq Llama 3.3 70B</Text>
+          </View>
         </View>
       </View>
 
@@ -296,6 +301,19 @@ const styles = StyleSheet.create({
   headerSub: {
     fontSize: 10,
     color: '#64748B',
+  },
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  clearBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   groqBadge: {
     flexDirection: 'row',
