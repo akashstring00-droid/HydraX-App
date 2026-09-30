@@ -34,7 +34,7 @@ export const AICoachScreen: React.FC = () => {
     {
       id: 'm1',
       sender: 'coach',
-      text: `Hey Akash! 👋 I'm your HydraX Personal Health Companion powered by Groq Llama-3.3 70B.\n\nI'm connected to your live wearable telemetry: Heart Rate is **${hr}**, Skin Temp is **${skinTemp}**, Ambient Climate is **${ambientTemp} (${humidity})**, and overall Risk is **${risk}**.\n\nHow are you feeling right now? Ask me anything about your health, recovery, exercise, or hydration!`,
+      text: `Hey Akash! 👋 Main aapka HydraX Personal Health Coach hu powered by Groq Llama-3.3 70B.\n\nAapke live wearable sensors connected hain: Heart Rate **${hr}**, Skin Temp **${skinTemp}**, Ambient Temp **${ambientTemp} (${humidity})**, aur Risk **${risk}** hai.\n\nAaj aap kaisa feel kar rahe ho? Apni health, workout, recovery ya hydration ke baare me mujhse kuch bhi pooch sakte ho!`,
       timestamp: 'Just now',
     },
   ];
@@ -96,10 +96,10 @@ export const AICoachScreen: React.FC = () => {
   };
 
   const quickActionChips = [
-    'How am I doing today? 🩺',
-    'Explain my heart rate & recovery 💓',
-    'Give me a hydration & rest plan 💧',
-    'What workout should I do? 🏃',
+    'Hii, kaise ho aap? 👋',
+    'Mera Heart rate kaisa h? 💓',
+    'Mujhe kitna paani peena chahiye? 💧',
+    'Aaj konsa workout karu? 🏃',
   ];
 
   const renderFormattedText = (text: string, isUser: boolean) => {

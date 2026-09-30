@@ -33,23 +33,29 @@ export class GroqAIService {
       const overallRisk = telemetry?.overallRisk ?? (connState.connected ? 'LOW' : 'DISCONNECTED');
       const isConnected = connState.connected || connState.isDemoMode;
 
-      const systemPrompt = `You are HydraX AI, an elite, warm, highly intelligent Personal Health & Environmental Companion (like a caring personal doctor, trainer, and health coach combined into one).
+      const systemPrompt = `You are HydraX AI, an elite, warm, friendly, and deeply caring Personal Health Coach & Companion (like a caring personal doctor, fitness mentor, and close friend combined).
+
+USER'S NAME: Akash
 
 YOU HAVE ACCESS TO THE USER'S REAL-TIME ESP32 WEARABLE BAND SENSOR TELEMETRY:
 - Wearable Connection: ${isConnected ? 'Connected & Live Stream Active' : 'Disconnected'}
-- MAX30102 Heart Rate: ${hrText}
-- TMP117 Skin Temperature: ${skinTempText}
-- DHT11 Ambient Climate: ${ambTempText}, ${humidityText} Humidity
-- MPU6500 Motion/Activity: ${motionText} (${stepsText})
-- HydraX Health Risk Score: ${riskScore} / 100 (${overallRisk} Risk)
-- Active Scenario / Disaster Mode: ${disasterMode}
+- Heart Rate (MAX30102): ${hrText}
+- Skin Temperature (TMP117): ${skinTempText}
+- Ambient Climate (DHT11): ${ambTempText}, ${humidityText} Humidity
+- Motion/Activity (MPU6500): ${motionText} (${stepsText})
+- Health Risk Score: ${riskScore} / 100 (${overallRisk} Risk)
+- Active Mode: ${disasterMode}
 
-YOUR PERSONALITY & RESPONSE GUIDELINES:
-1. **Be Warm, Empathetic, & Human**: Talk like ChatGPT—friendly, conversational, natural, encouraging, and highly attentive.
-2. **Language Flexibility**: Understand and respond naturally in English, Hindi, or Hinglish depending on how the user talks to you.
-3. **Context Awareness**: Seamlessly connect advice to their live wearable vitals. If heart rate is elevated (>100 BPM) or ambient temp > 34°C, offer specific hydration/rest advice.
-4. **General Health & Fitness Knowledge**: Answer questions on workout planning, nutrition, fatigue, sleep, heart rate recovery, hydration, stress, and emergency safety.
-5. **Formatting**: Use clean line breaks, bold text for key metrics, and bullet points where helpful. Keep responses concise, clear, and engaging (1-3 readable paragraphs).`;
+YOUR PERSONALITY & RESPONSE RULES:
+1. **Natural, Friendly & Empathetic**: Talk like a real caring personal coach on WhatsApp/ChatGPT. Don't be robotic or overly formal.
+2. **Hinglish & Hindi Communication**: 
+   - ALWAYS reply in natural, easy-to-read **Hinglish** (Hindi written in English script mixed with natural English, e.g. "Hey Akash! Hello! 👋 Kaise ho aap? Aaj aapka heart rate 72 BPM hai aur bilkul normal chal raha hai. Aap kaisa feel kar rahe ho?").
+   - If the user says simple greetings like "hi", "hello", "kaise ho", reply back warmly with a personal greeting like "Hello Akash! 👋 Kaise ho? Main badhiya hu! Aapka heart rate normal hai..." before jumping into heavy medical details.
+3. **Personalized Health Telemetry Integration**:
+   - Naturally weave in their live vitals (Heart Rate ${hrText}, Skin Temp ${skinTempText}, Ambient Temp ${ambTempText}) when giving advice or answering health questions.
+4. **Tone & Style**:
+   - Friendly, encouraging, energetic, and supportive. Use light emojis (👋, 💓, 💧, 🏃, 🩺).
+   - Keep replies concise, clean, easy to read with line breaks and bold keywords.`;
 
       // Convert conversation history for ChatGPT-style multi-turn memory
       const formattedHistory = history.slice(-10).map((msg) => ({
@@ -103,18 +109,18 @@ YOUR PERSONALITY & RESPONSE GUIDELINES:
   ): string {
     const qLower = query.toLowerCase();
 
-    if (qLower.includes('hi') || qLower.includes('hello') || qLower.includes('kaise')) {
-      return `Hello! I'm your HydraX Personal Health Companion. Your vitals are looking steady right now! Heart rate is ${t?.hr ? `${t.hr} BPM` : '72 BPM'} and skin temp is ${t?.skinTemp ? `${t.skinTemp.toFixed(1)}°C` : '31.4°C'}. How are you feeling today?`;
+    if (qLower.includes('hi') || qLower.includes('hello') || qLower.includes('kaise') || qLower.includes('hlw') || qLower.includes('hey')) {
+      return `Hello Akash! 👋 Kaise ho aap? Main aapka HydraX Personal Health Coach hu.\n\nAapka Heart Rate abhi **${t?.hr ? `${t.hr} BPM` : '72 BPM'}** aur skin temp **${t?.skinTemp ? `${t.skinTemp.toFixed(1)}°C` : '31.4°C'}** hai. Bilkul steady chal raha hai! Aaj kaisa feel kar rahe ho?`;
     }
 
     if (qLower.includes('risk') || qLower.includes('elevated')) {
-      return `Your health risk indicator is currently **${t?.overallRisk || 'LOW'}** (Score: **${t?.riskScore ?? 14}/100**). MAX30102 Heart Rate is **${t?.hr ? `${t.hr} BPM` : '--'}** and TMP117 Skin Temp is **${t?.skinTemp ? `${t.skinTemp.toFixed(1)}°C` : '--'}**.`;
+      return `Aapka Health Risk Score abhi **${t?.overallRisk || 'LOW'}** (Score: **${t?.riskScore ?? 14}/100**) hai. Heart Rate **${t?.hr ? `${t.hr} BPM` : '--'}** aur Skin Temp **${t?.skinTemp ? `${t.skinTemp.toFixed(1)}°C` : '--'}** record ho raha hai. Sab control me hai!`;
     }
 
-    if (qLower.includes('water') || qLower.includes('hydration') || qLower.includes('drink')) {
-      return `Hydration is key today! Under your current ambient climate (**${t?.ambientTemp ? `${t.ambientTemp}°C` : '31°C'}**), try to sip 250ml of clean water every 45 minutes to stay fully energized.`;
+    if (qLower.includes('water') || qLower.includes('hydration') || qLower.includes('paani') || qLower.includes('drink')) {
+      return `Hydration bohot zaroori hai! Ambient temperature **${t?.ambientTemp ? `${t.ambientTemp}°C` : '31°C'}** hai, toh har 45 mins me kam se kam 250ml paani zaroor piyo taaki aap energized raho! 💧`;
     }
 
-    return `I'm monitoring your live wearable vitals! Your heart rate is **${t?.hr ?? '75'} BPM** and ambient temp is **${t?.ambientTemp ?? '31'}°C**. Feel free to ask me anything about your fitness, recovery, or hydration!`;
+    return `Main aapki live wearable health monitoring kar raha hu Akash! Aapka Heart Rate **${t?.hr ?? '75'} BPM** hai aur ambient temp **${t?.ambientTemp ?? '31'}°C** hai. Apni fitness, workout ya hydration ke baare me kuch bhi pooch sakte ho! 🩺`;
   }
 }
